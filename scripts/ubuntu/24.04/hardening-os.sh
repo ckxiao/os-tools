@@ -3,7 +3,6 @@
 script_name=$(basename "$0" .sh)      # 示例：原脚本名称为 deploy.sh 会变成 deploy
 current_time=$(date "+%Y%m%d-%H%M%S") # 获取当前时间戳用于备份文件
 LOG_FILE="log_${script_name}_${current_time}.log"
-exec > >(tee -a "$LOG_FILE") 2>&1 # 将标准输出和标准错误重定向到日志文件
 
 ###############################
 #        配置参数区域         #
@@ -26,7 +25,9 @@ X11_FORWARDING="no"         # 是否启用X11转发(yes/no)
 FAILED_LOGIN_ATTEMPTS=5     # 设置登录失败尝试次数限制
 UNLOCK_TIME=300             # 设置普通用户账户锁定时间(秒)
 ROOT_UNLOCK_TIME=600        # 设置root账户锁定时间(秒)
-SSH_LOGIN_HOSTS=("192.168.68.100" "192.168.68.36") # 注意: 每个地址独立成一项，不要用逗号分隔
+# SSH 来源白名单：留空表示不启用 hosts.allow 限制（公开仓库的安全默认值）
+# 需要限制来源时用 --allow-hosts="10.0.0.5,10.0.0.6" 传入，不要直接改这里
+SSH_LOGIN_HOSTS=()
 OPS_USER="ck"
 
 # Shell会话管理设置
@@ -98,9 +99,101 @@ declare -A SYSCTL_PARAMS=(
 )
 
 ###############################
+#        命令行参数           #
+###############################
+usage() {
+    cat <<EOF
+用法: bash hardening-os.sh [选项]
+
+  --ssh-port=PORT         SSH 监听端口，默认 22
+  --allow-hosts=IP[,IP]   允许 SSH 登录的来源 IP，留空表示不做限制
+  --ops-user=NAME         运维账号名，默认 ck
+  -h, --help              显示帮助
+
+说明:
+  只有显式传入 --allow-hosts 才会写入 /etc/hosts.allow 与 /etc/hosts.deny 白名单；
+  hosts.allow 依赖 sshd 的 libwrap 支持，未编译该特性时不生效，建议配合 ufw 限制来源。
+
+环境变量:
+  HARDENING_SSH_PORT         等同于 --ssh-port
+  HARDENING_ALLOW_HOSTS      等同于 --allow-hosts
+  HARDENING_OPS_USER         等同于 --ops-user
+  HARDENING_ALLOW_NO_KEY=1   未部署 SSH 公钥时仍强制继续（默认中止，防止锁死）
+EOF
+}
+
+parse_args() {
+    # 环境变量优先级低于命令行参数
+    [ -n "${HARDENING_SSH_PORT:-}" ] && SSH_PORT="$HARDENING_SSH_PORT"
+    [ -n "${HARDENING_OPS_USER:-}" ] && OPS_USER="$HARDENING_OPS_USER"
+    if [ -n "${HARDENING_ALLOW_HOSTS:-}" ]; then
+        IFS=',' read -r -a SSH_LOGIN_HOSTS <<<"$HARDENING_ALLOW_HOSTS"
+    fi
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --ssh-port=*) SSH_PORT="${1#*=}" ;;
+        --ssh-port)
+            shift
+            SSH_PORT="${1:-}"
+            ;;
+        --allow-hosts=*) IFS=',' read -r -a SSH_LOGIN_HOSTS <<<"${1#*=}" ;;
+        --allow-hosts)
+            shift
+            IFS=',' read -r -a SSH_LOGIN_HOSTS <<<"${1:-}"
+            ;;
+        --ops-user=*) OPS_USER="${1#*=}" ;;
+        --ops-user)
+            shift
+            OPS_USER="${1:-}"
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "未知参数: $1（使用 -h 查看帮助）" >&2
+            exit 2
+            ;;
+        esac
+        shift
+    done
+}
+
+validate_config() {
+    local host
+
+    if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+        echo "[X] SSH 端口非法: ${SSH_PORT}（应为 1-65535）" >&2
+        return 1
+    fi
+
+    if [ -n "${OPS_USER:-}" ] && ! [[ "$OPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "[X] 运维账号名非法: ${OPS_USER}" >&2
+        return 1
+    fi
+
+    for host in "${SSH_LOGIN_HOSTS[@]+"${SSH_LOGIN_HOSTS[@]}"}"; do
+        if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            echo "[X] 白名单地址非法: ${host}（当前仅支持 IPv4 单地址）" >&2
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+###############################
 #        主程序入口           #
 ###############################
 main() {
+    parse_args "$@"
+    validate_config || return 1
+
+    # 参数解析完成后再开启日志重定向，保证 -h 与错误提示直接输出到终端
+    exec > >(tee -a "$LOG_FILE") 2>&1
+    echo "日志文件: $LOG_FILE"
+
     echo "████████████████████████████████ 开始应用Ubuntu系统安全配置 ████████████████████████████████"
 
     if [ "$(id -u)" -ne 0 ]; then
@@ -413,17 +506,20 @@ configure_ssh_security() {
         echo "    [!] 未找到 pam_faillock.so，跳过登录失败锁定配置"
     fi
 
-    # 配置allow \ deny 列表
-    # allow
-    for host_now in "${SSH_LOGIN_HOSTS[@]}"; do
-        if ! grep -q "^sshd:$host_now" /etc/hosts.allow; then
-            echo "sshd:$host_now:allow" >>/etc/hosts.allow
-        fi
-    done
+    # 配置 allow / deny 列表（仅在显式指定 --allow-hosts 时启用）
+    if [ ${#SSH_LOGIN_HOSTS[@]} -eq 0 ]; then
+        echo "    [信息] 未指定 --allow-hosts，跳过 sshd 来源白名单配置"
+    else
+        for host_now in "${SSH_LOGIN_HOSTS[@]}"; do
+            if ! grep -q "^sshd:$host_now" /etc/hosts.allow 2>/dev/null; then
+                echo "sshd:$host_now:allow" >>/etc/hosts.allow
+            fi
+        done
 
-    # deny all
-    if ! grep -q "^sshd:ALL" /etc/hosts.deny; then
-        echo sshd:ALL >>/etc/hosts.deny
+        if ! grep -q "^sshd:ALL" /etc/hosts.deny 2>/dev/null; then
+            echo sshd:ALL >>/etc/hosts.deny
+        fi
+        echo "    [!] hosts.allow 依赖 sshd 的 libwrap 支持，未编译该特性时不生效，建议同时用 ufw 限制来源"
     fi
 
     #result
@@ -432,22 +528,15 @@ configure_ssh_security() {
     echo "        允许Root登录: $PERMIT_ROOT_LOGIN"
     echo "        允许空密码登录: $PERMIT_EMPTY_PASSWORDS"
     echo "        X11转发: $X11_FORWARDING"
-    echo "        密码认证: no"
+    echo "        密码认证: $PERMIT_PASSWD_LOGIN"
     echo "        TCP转发: no"
     echo "        代理转发: no"
     if grep -q "^auth required pam_faillock.so" /etc/pam.d/common-auth; then
         echo "    [+] PAM登录失败策略已设置 (尝试次数限制:$FAILED_LOGIN_ATTEMPTS,解锁时间:$UNLOCK_TIME 秒)"
     fi
-    # hosts.allow/deny后添加:
-    for host_now in "${SSH_LOGIN_HOSTS[@]}"; do
-        if grep -q "^sshd:$host_now" /etc/hosts.allow; then
-            echo "    [+] SSH访问白名单添加主机: $host_now"
-        fi
+    for host_now in "${SSH_LOGIN_HOSTS[@]+"${SSH_LOGIN_HOSTS[@]}"}"; do
+        echo "    [+] SSH访问白名单: $host_now"
     done
-
-    if grep -q "^sshd:ALL" /etc/hosts.deny; then
-        echo "    [+] SSH默认访问策略设置为拒绝所有主机连接(除白名单外)"
-    fi
 }
 
 # 配置Shell会话管理函数
@@ -737,4 +826,4 @@ restart_services() {
     fi
 }
 
-main
+main "$@"

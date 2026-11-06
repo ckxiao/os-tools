@@ -18,6 +18,8 @@ readonly DEFAULT_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dsh-os-tools"
 readonly DEFAULT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dsh-os-tools"
 # 每个 OS 版本目录下的参数中间脚本，负责参数声明、采集与校验
 readonly RUNNER_FILE="run.sh"
+# 每个 OS 版本目录下的共享库，被原子脚本 source
+readonly COMMON_FILE="common.sh"
 
 INSTALL_DIR="${DSH_TOOLS_HOME:-$DEFAULT_INSTALL_DIR}"
 CONFIG_DIR="${DSH_TOOLS_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
@@ -629,6 +631,47 @@ ensure_runner() {
     printf '%s' "$destination"
 }
 
+# 查找已安装且校验通过的共享库
+find_local_common() {
+    local os_path="$1"
+    local source_file="$SOURCE_DIR/scripts/$os_path/$COMMON_FILE"
+    local installed="$SCRIPT_DIR/$os_path/$COMMON_FILE"
+
+    if is_local_bundle && [[ -f "$source_file" ]]; then
+        return 0
+    fi
+
+    if [[ -f "$installed" ]] && [[ -f "$INSTALLED_MANIFEST" ]] &&
+        verify_file "$installed" "scripts/$os_path/$COMMON_FILE" "$INSTALLED_MANIFEST"; then
+        return 0
+    fi
+    return 1
+}
+
+# 确保共享库就绪；远端没有该文件时视为可选，直接放行
+ensure_common() {
+    local os_path="$1"
+    local relative_path="scripts/$os_path/$COMMON_FILE"
+    local destination="$SCRIPT_DIR/$os_path/$COMMON_FILE"
+    local tmp_file
+
+    find_local_common "$os_path" && return 0
+    [[ -n "$BASE_URL" ]] || return 0
+    load_remote_manifest 2>/dev/null || return 0
+    ensure_work_dir
+
+    tmp_file="$WORK_DIR/$COMMON_FILE"
+    download_raw "$relative_path" "$tmp_file" 2>/dev/null || return 0
+    if ! verify_file "$tmp_file" "$relative_path" "$REMOTE_MANIFEST" 2>/dev/null; then
+        warn "共享库校验失败：$relative_path"
+        return 1
+    fi
+
+    mkdir -p -- "$(dirname -- "$destination")"
+    copy_with_mode 0644 "$tmp_file" "$destination"
+    return 0
+}
+
 # 调用参数中间脚本采集参数；输出写入文件，避免进程替换吞掉退出码
 collect_script_args() {
     local runner="$1"
@@ -656,6 +699,7 @@ run_tool() {
     parse_script_entry "$entry"
 
     script_path="$(ensure_script "$ENTRY_PROFILE" "$ENTRY_OS_PATH" "$ENTRY_FILE")"
+    ensure_common "$ENTRY_OS_PATH" || fail "共享库准备失败：$ENTRY_OS_PATH/$COMMON_FILE"
     confirm_run "$ENTRY_TITLE" "$ENTRY_RISK" || {
         info "已取消"
         return 0
@@ -684,7 +728,7 @@ run_tool() {
 
 install_profile_from_source() {
     local wanted_profile="$1"
-    local line id os_path file count=0 one_path runner
+    local line id os_path file count=0 one_path runner common
     local -a os_paths=()
     for line in "${CATALOG_ROWS[@]}"; do
         IFS='|' read -r id _ _ os_path _ _ file _ _ _ _ _ <<<"$line"
@@ -700,7 +744,7 @@ install_profile_from_source() {
         ((count += 1))
     done
 
-    # 一并安装该 OS 版本的参数中间脚本
+    # 一并安装该 OS 版本的参数中间脚本与共享库
     for one_path in ${os_paths[@]+"${os_paths[@]}"}; do
         runner="$SOURCE_DIR/scripts/$one_path/$RUNNER_FILE"
         if [[ -f "$runner" ]]; then
@@ -708,6 +752,14 @@ install_profile_from_source() {
             copy_with_mode 0755 "$runner" "$SCRIPT_DIR/$one_path/$RUNNER_FILE"
         else
             warn "源码中缺少参数中间脚本：scripts/$one_path/$RUNNER_FILE"
+        fi
+
+        common="$SOURCE_DIR/scripts/$one_path/$COMMON_FILE"
+        if [[ -f "$common" ]]; then
+            syntax_check "$common" || fail "语法检查失败：scripts/$one_path/$COMMON_FILE"
+            copy_with_mode 0644 "$common" "$SCRIPT_DIR/$one_path/$COMMON_FILE"
+        else
+            warn "源码中缺少共享库：scripts/$one_path/$COMMON_FILE"
         fi
     done
 
@@ -722,7 +774,7 @@ install_profile_from_source() {
 
 install_profile_from_remote() {
     local wanted_profile="$1"
-    local line id os_path file relative_path runner_relative one_path count=0
+    local line id os_path file relative_path runner_relative common_relative one_path count=0
     local stage_dir
     local -a os_paths=()
 
@@ -765,6 +817,16 @@ install_profile_from_remote() {
                 warn "远端缺少或校验失败的参数中间脚本：$runner_relative"
                 rm -f -- "$stage_dir/$runner_relative"
             fi
+
+            # 共享库缺失时静默跳过（部分 OS 目录可能没有）
+            common_relative="scripts/$os_path/$COMMON_FILE"
+            if download_raw "$common_relative" "$stage_dir/$common_relative" 2>/dev/null &&
+                verify_file "$stage_dir/$common_relative" "$common_relative" "$REMOTE_MANIFEST" 2>/dev/null &&
+                syntax_check "$stage_dir/$common_relative" 2>/dev/null; then
+                :
+            else
+                rm -f -- "$stage_dir/$common_relative"
+            fi
         fi
         ((count += 1))
     done
@@ -781,12 +843,16 @@ install_profile_from_remote() {
             "$SCRIPT_DIR/$os_path/$file"
     done
 
-    # 安装参数中间脚本
+    # 安装参数中间脚本与共享库
     for one_path in ${os_paths[@]+"${os_paths[@]}"}; do
+        mkdir -p -- "$SCRIPT_DIR/$one_path"
         if [[ -f "$stage_dir/scripts/$one_path/$RUNNER_FILE" ]]; then
-            mkdir -p -- "$SCRIPT_DIR/$one_path"
             copy_with_mode 0755 "$stage_dir/scripts/$one_path/$RUNNER_FILE" \
                 "$SCRIPT_DIR/$one_path/$RUNNER_FILE"
+        fi
+        if [[ -f "$stage_dir/scripts/$one_path/$COMMON_FILE" ]]; then
+            copy_with_mode 0644 "$stage_dir/scripts/$one_path/$COMMON_FILE" \
+                "$SCRIPT_DIR/$one_path/$COMMON_FILE"
         fi
     done
 

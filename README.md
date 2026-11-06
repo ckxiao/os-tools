@@ -60,6 +60,7 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
 └── scripts/
     └── ubuntu/
         └── 24.04/
+            ├── common.sh
             ├── run.sh
             ├── init-os.sh
             ├── init_docker.sh
@@ -76,7 +77,7 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
 scripts/<os>/<version>/<script>.sh
 ```
 
-每个版本目录下还有一个参数中间脚本 `run.sh`，用于声明该版本原子脚本的参数契约（见下文「参数中间脚本」）。它不列入 `catalog.tsv`，不出现在菜单的脚本列表中。
+每个版本目录下有两个非原子脚本：参数中间脚本 `run.sh`（见下文「参数中间脚本」）与共享库 `common.sh`（见下文「共享库」）。两者都不列入 `catalog.tsv`，也不出现在菜单的脚本列表中。
 
 以后增加其他系统时，直接增加版本目录：
 
@@ -138,7 +139,7 @@ https://ckxiao.github.io/os-tools
 sha256sum menu.sh catalog.tsv README.md scripts/*/*/*.sh > SHA256SUMS
 ```
 
-`scripts/*/*/*.sh` 已包含各版本的 `run.sh`，无需单独处理。
+`scripts/*/*/*.sh` 已包含各版本的 `run.sh` 与 `common.sh`，无需单独处理。
 
 仓库通过 `.gitattributes` 强制所有文本文件使用 LF 行尾。本仓库在 Windows 上维护、在 Linux 上执行，若检出为 CRLF，`bash` 会因 shebang 失败而无法运行脚本，且 `SHA256SUMS` 校验也会不一致。
 
@@ -171,17 +172,46 @@ bash scripts/ubuntu/24.04/run.sh --collect init-os.sh node01 192.168.1.20/24 223
 
 | 脚本 | 参数 | 说明 |
 | --- | --- | --- |
-| `init-os.sh` | `hostname`（必填）、`ip_prefix`（可选）、`dns`（可选） | 主机名需符合 RFC 1123；`ip_prefix` 形如 `192.168.1.20/24`，留空沿用当前地址；`dns` 留空使用网关 |
-| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` / `hardening-os.sh` | 无 | 配置项在脚本头部或环境变量中 |
+| `init-os.sh` | `hostname`（必填）、`ip_prefix`（可选）、`dns`（可选） | 位置参数。主机名需符合 RFC 1123；`ip_prefix` 形如 `192.168.1.20/24`，留空沿用当前地址；`dns` 留空使用网关 |
+| `hardening-os.sh` | `--ssh-port`、`--allow-hosts`、`--ops-user` | 选项参数。不传 `--allow-hosts` 则不写来源白名单；端口默认 22，运维账号默认 `ck` |
+| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` | 无 | 配置项通过环境变量覆盖，见各脚本 `--help` |
 | `mgt-god.sh` | 原样透传 | `函数名 [参数...]`，无参进入交互菜单 |
 | `opt.sh` | 原样透传 | `-h` / `-a` 示例选项 |
 
+`--collect` 同时接受两种入参形式，输出统一为「每行一个 token」：
+
+```bash
+# 位置参数（顺序与契约声明一致）
+bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh 2222 10.0.0.5,10.0.0.6 ops
+
+# 选项参数（可任意顺序，未提供的项取默认值）
+bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops-user=ops
+```
+
 新增 OS 版本时，除了放脚本和登记 `catalog.tsv`，还需提供该版本目录下的 `run.sh`；缺失时 `menu.sh` 会降级为「原始参数直接透传」并给出警告。
+
+## 共享库
+
+`common.sh` 存放被多个原子脚本复用的逻辑，避免同一段代码复制多份：
+
+| 函数 | 作用 |
+| --- | --- |
+| `init_logging` | 把 stdout/stderr 同时写入 `/var/log/dsh-tools/`，目录不可写时回退当前目录 |
+| `green_echo` / `red_echo` / `yellow_echo` | 统一日志输出，非交互终端时自动跳过 sleep |
+| `ensure_apt_mirror` | 按 `/etc/os-release` 的代号生成 APT 源并刷新索引 |
+| `install_docker` | 安装 Docker CE、配置镜像加速器、把调用者加入 docker 组 |
+| `start_stopped_containers` | 启动处于 Exited / Created 状态的容器 |
+| `run_step` | 幂等执行：成功后写入 `/var/lib/dsh-tools/state/<name>.done`，重跑自动跳过 |
+
+可覆盖的环境变量：`DSH_TOOLS_APT_MIRROR`、`DSH_TOOLS_DOCKER_REPO`、`DSH_TOOLS_DOCKER_MIRRORS`、`DSH_STATE_DIR`、`DSH_LOG_DIR`；`DSH_TOOLS_FORCE=1` 可忽略状态标记强制重跑。
+
+`common.sh` 不能直接执行（会报错退出），只能被同目录下的脚本 `source`。菜单在下载原子脚本时会一并下载并校验该文件。
 
 ## 安全提示
 
 - 公开仓库中的脚本会修改服务器、网络、SSH、Docker 或 Kubernetes。执行前应审查具体脚本及风险说明。
 - `hardening-os.sh` 会修改 SSH、PAM 与关键文件权限。脚本已内置两项防锁死措施：关闭密码登录前会检查 root 或 sudo 组用户是否存在 `authorized_keys`，不满足则中止（可用 `HARDENING_ALLOW_NO_KEY=1` 强制）；重启 SSH 前会执行 `sshd -t` 校验配置。即便如此，仍建议先在测试机验证。
+- 该脚本的 SSH 来源白名单默认为空，即不做来源限制；需要限制时用 `--allow-hosts="10.0.0.5,10.0.0.6"` 指定。`/etc/hosts.allow` 依赖 sshd 的 libwrap 支持，未编译该特性时不生效，建议同时用 ufw 限制来源。
 - 此前版本中 `/etc/shadow` 被设为 `755`、`/tmp` 丢失 sticky bit、`common-account` 规则被误写入 `sshd_config` 等问题已修复。
 - `mgt-god.sh` 包含删除、清空、Docker prune、Kubernetes 删除类操作，应以 root 权限严格审核运行。
 - `init_llm.sh` 会把 Ollama 的 `11434/TCP` 对外开放，建议增加认证、反向代理、网络 ACL 或限制来源。

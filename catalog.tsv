@@ -3,6 +3,6 @@ ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|1|init-os.sh|Ubuntu 基�
 ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|2|init_docker.sh|安装 Docker|安装 Docker、配置镜像加速器并启动已有容器|会替换 APT/Docker 配置，并启动所有处于 Exited/Created 状态的容器|yes|none
 ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|3|init_llm.sh|部署 Ollama 与模型|安装 Docker/Ollama，下载 qwen3:8b 与 embedding 模型|模型体积大、耗时较长，并会对外开放 11434/TCP|yes|none
 ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|4|init_dify.sh|部署 Dify|拉取 Dify 仓库并通过 Docker Compose 启动/更新|会执行 docker compose down，并替换 Dify 容器|yes|none
-ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|5|hardening-os.sh|主机安全加固|配置防火墙、SSH、PAM、auditd、sysctl 和文件权限|高风险：会修改 SSH/PAM 与关键文件权限；已内置公钥预检与 sshd 配置校验，仍建议先在测试机验证|yes|none
+ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|5|hardening-os.sh|主机安全加固|配置防火墙、SSH、PAM、auditd、sysctl 和文件权限，可指定 SSH 端口与来源白名单|高风险：会修改 SSH/PAM 与关键文件权限；已内置公钥预检与 sshd 配置校验，仍建议先在测试机验证|yes|prompt
 ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|6|mgt-god.sh|综合运维控制台|用户、网络、磁盘、服务、Docker、Cron、K8S 等综合管理|包含删除、清空、卸载和集群变更操作，请逐项确认|yes|passthrough
 ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|7|opt.sh|参数解析示例|演示 getopts 的命令行参数处理|低风险示例脚本|no|passthrough

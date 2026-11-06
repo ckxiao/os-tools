@@ -23,6 +23,42 @@ jobs:
             bash -n "$file"
           done
 
+      - name: Check shared library presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in scripts/*/*/*.sh; do
+            if grep -q 'common\.sh' "$file"; then
+              dir="$(dirname "$file")"
+              [[ -f "$dir/common.sh" ]] || {
+                echo "$file references common.sh but $dir/common.sh is missing"
+                exit 1
+              }
+            fi
+          done
+
+      - name: Check catalog field count
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            [[ -z "${line//[[:space:]]/}" || "$line" == \#* ]] && continue
+            count="$(awk -F'|' '{print NF}' <<<"$line")"
+            [[ "$count" -eq 12 ]] || {
+              echo "catalog row has $count fields, expected 12: $line"
+              exit 1
+            }
+          done < catalog.tsv
+
+      - name: Check with shellcheck
+        shell: bash
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "shellcheck 未安装，跳过"
+            exit 0
+          fi
+          shellcheck --severity=error --shell=bash menu.sh scripts/*/*/*.sh
+
       - name: Check catalog references
         shell: bash
         run: |

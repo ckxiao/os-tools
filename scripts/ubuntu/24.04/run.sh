@@ -89,6 +89,34 @@ validate_dns() {
     return 1
 }
 
+validate_port() {
+    local value="$1"
+    [[ "$value" =~ ^[0-9]{1,5}$ ]] || return 1
+    [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || return 1
+    return 0
+}
+
+validate_username() {
+    local value="$1"
+    [[ "$value" =~ ^[a-z_][a-z0-9_-]*$ ]] || return 1
+    [ "${#value}" -le 32 ] || return 1
+    return 0
+}
+
+validate_hostlist() {
+    local value="$1"
+    local host
+    local -a hosts=()
+
+    # 允许留空，表示不限制来源
+    [ -z "$value" ] && return 0
+    IFS=',' read -r -a hosts <<<"$value"
+    for host in "${hosts[@]}"; do
+        validate_ipv4 "$host" || return 1
+    done
+    return 0
+}
+
 # ---------------------------------------------------------------- 参数契约
 
 PARAM_MODE="passthrough"
@@ -97,6 +125,7 @@ PARAM_PROMPT=()
 PARAM_REQUIRED=()
 PARAM_DEFAULT=()
 PARAM_VALIDATOR=()
+PARAM_FLAG=()
 
 reset_spec() {
     PARAM_MODE="passthrough"
@@ -105,14 +134,18 @@ reset_spec() {
     PARAM_REQUIRED=()
     PARAM_DEFAULT=()
     PARAM_VALIDATOR=()
+    PARAM_FLAG=()
 }
 
+# add_param 名称 提示 是否必填 默认值 校验函数 [选项名]
+# 第 6 个参数为空表示位置参数，非空表示以 --选项名=值 的形式输出
 add_param() {
     PARAM_NAME+=("$1")
     PARAM_PROMPT+=("$2")
     PARAM_REQUIRED+=("$3")
     PARAM_DEFAULT+=("$4")
     PARAM_VALIDATOR+=("$5")
+    PARAM_FLAG+=("${6:-}")
 }
 
 # 新增脚本或新增参数时，只需在此登记，menu.sh 无需改动
@@ -141,7 +174,19 @@ load_spec() {
         # 无参进入交互菜单；带参时按 `函数名 [参数...]` 直接调用
         PARAM_MODE="passthrough"
         ;;
-    init_docker.sh | init_llm.sh | init_dify.sh | hardening-os.sh)
+    hardening-os.sh)
+        PARAM_MODE="params"
+        add_param ssh_port \
+            "SSH 监听端口" \
+            optional "22" validate_port "ssh-port"
+        add_param allow_hosts \
+            "允许 SSH 登录的来源 IPv4，逗号分隔（留空表示不限制）" \
+            optional "" validate_hostlist "allow-hosts"
+        add_param ops_user \
+            "运维账号名，加入默认用户白名单" \
+            optional "ck" validate_username "ops-user"
+        ;;
+    init_docker.sh | init_llm.sh | init_dify.sh)
         PARAM_MODE="passthrough"
         ;;
     *)
@@ -193,7 +238,9 @@ list_scripts() {
     for file in "$SCRIPT_DIR"/*.sh; do
         [ -e "$file" ] || continue
         base="$(basename "$file")"
-        [ "$base" = "run.sh" ] && continue
+        case "$base" in
+        run.sh | common.sh) continue ;;
+        esac
         load_spec "$base"
         if [ "$PARAM_MODE" = "params" ]; then
             printf '%-20s %s\n' "$base" "$(param_summary)"
@@ -221,7 +268,11 @@ describe_script() {
         else
             tag="可选"
         fi
-        printf '  %-12s %-4s %s\n' "${PARAM_NAME[$i]}" "$tag" "${PARAM_PROMPT[$i]}"
+        local label="${PARAM_NAME[$i]}"
+        if [ -n "${PARAM_FLAG[$i]}" ]; then
+            label="--${PARAM_FLAG[$i]}"
+        fi
+        printf '  %-16s %-4s %s\n' "$label" "$tag" "${PARAM_PROMPT[$i]}"
     done
 }
 
@@ -229,8 +280,9 @@ collect_params() {
     local script="$1"
     shift
     local -a provided=("$@")
+    local -a positional=()
     local -a result=()
-    local i value
+    local i value arg key pos=0
 
     load_spec "$script"
 
@@ -242,8 +294,29 @@ collect_params() {
         return 0
     fi
 
+    # 同时接受 --选项名=值 与位置参数两种入参形式
+    declare -A named=()
+    for arg in "${provided[@]+"${provided[@]}"}"; do
+        case "$arg" in
+        --*=*)
+            key="${arg%%=*}"
+            named["${key#--}"]="${arg#*=}"
+            ;;
+        *)
+            positional+=("$arg")
+            ;;
+        esac
+    done
+
     for i in "${!PARAM_NAME[@]}"; do
-        value="${provided[$i]:-}"
+        value=""
+        if [ -n "${PARAM_FLAG[$i]}" ] && [ -n "${named[${PARAM_FLAG[$i]}]:-}" ]; then
+            value="${named[${PARAM_FLAG[$i]}]}"
+        else
+            value="${positional[$pos]:-}"
+            pos=$((pos + 1))
+        fi
+
         if [ -z "$value" ]; then
             value="${PARAM_DEFAULT[$i]}"
         fi
@@ -275,7 +348,14 @@ collect_params() {
             fi
         fi
 
-        result+=("$value")
+        # 选项式参数仅在非空时输出，空值表示沿用脚本自身默认值
+        if [ -n "${PARAM_FLAG[$i]}" ]; then
+            if [ -n "$value" ]; then
+                result+=("--${PARAM_FLAG[$i]}=$value")
+            fi
+        else
+            result+=("$value")
+        fi
     done
 
     printf '%s\n' "${result[@]}"
@@ -293,6 +373,7 @@ Ubuntu 24.04 参数中间脚本
 说明：
   本脚本只负责参数声明、采集与校验，不执行原子脚本。
   menu.sh 会先调用 --collect 取得参数，再以 sudo 执行目标脚本。
+  位置参数按声明顺序逐行输出；登记了选项名的参数以 --选项名=值 的形式输出，空值不输出。
 
 退出码：0 成功 / 2 用法错误 / 3 缺少必填参数 / 4 参数校验失败
 EOF
