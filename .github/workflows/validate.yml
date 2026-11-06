@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
-          for file in menu.sh scripts/**/*.sh; do
+          for file in menu.sh scripts/**/*.sh tools/*.sh; do
             bash -n "$file"
           done
 
@@ -66,7 +66,7 @@ jobs:
             echo "shellcheck 未安装，跳过"
             exit 0
           fi
-          shellcheck --severity=error --shell=bash menu.sh tests/run-tests.sh scripts/*/*/*.sh
+          shellcheck --severity=error --shell=bash menu.sh tests/run-tests.sh scripts/*/*/*.sh tools/*.sh
 
       - name: Run tests
         shell: bash
@@ -106,3 +106,18 @@ jobs:
       - name: Verify checksums
         shell: bash
         run: sha256sum --check --strict SHA256SUMS
+
+  e2e-debconf:
+    # 在真实 Ubuntu 24.04 里验证 apt 不会弹出 debconf 选择界面。
+    # 用 script 造 pty：没有终端时 debconf 本来就不弹框，那样测试是假通过。
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install without prompts
+        run: |
+          docker run --rm -i -v "$PWD":/w -w /w ubuntu:24.04 bash -c '
+            set -e
+            apt-get update -qq
+            script -qec "bash tests/e2e-debconf.sh" /dev/null'

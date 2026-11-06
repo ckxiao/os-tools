@@ -231,6 +231,21 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 
 `common.sh` 不能直接执行（会报错退出），只能被同目录下的脚本 `source`。菜单在下载原子脚本时会一并下载并校验该文件。
 
+## 开发与验证
+
+仓库在 Windows 上编辑、在 Linux 上执行，所以验证分四层：本地静态检查、真实 Linux 主机、一次性容器、CI。远程验证走 `tools/remote-dev.sh`：
+
+```bash
+bash tools/remote-dev.sh check        # 测试机：语法 + shellcheck + 单元测试
+bash tools/remote-dev.sh container    # 测试机：ubuntu:24.04 容器内跑测试
+bash tools/remote-dev.sh e2e          # 测试机：容器内验证 apt 不弹 debconf
+bash tools/remote-dev.sh shell        # 同步后进入开发机交互 shell
+```
+
+拓扑、首次准备（SSH 别名、docker 代理）、排错表见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+约定：开发机只做同步与只读检查，**不在开发机上安装测试工具**；需要 `apt install`、跑容器或做破坏性验证时用测试机。
+
 ## 常见问题
 
 **运行时提示「本地 xxx 与仓库清单不一致（仓库已更新），重新下载」？**
