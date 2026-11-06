@@ -25,6 +25,20 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 
+# 默认值统一取自 common.sh，避免与脚本实现两处漂移
+if [ -r "$SCRIPT_DIR/common.sh" ]; then
+    # shellcheck source=common.sh
+    . "$SCRIPT_DIR/common.sh"
+fi
+DEFAULT_APT_MIRROR="${APT_MIRROR:-https://mirrors.aliyun.com/ubuntu}"
+DEFAULT_DOCKER_REPO="${DOCKER_REPO_BASE:-https://mirrors.aliyun.com/docker-ce/linux/ubuntu}"
+DEFAULT_DOCKER_MIRRORS="${DOCKER_REGISTRY_MIRRORS:-https://docker.1panel.live,https://hub.rat.dev,https://docker.m.daocloud.io,https://dockerproxy.cn}"
+DEFAULT_CHAT_MODEL="${DSH_TOOLS_LLM_MODEL:-qwen3:8b}"
+DEFAULT_EMBED_MODEL="${DSH_TOOLS_EMBED_MODEL:-qwen3-embedding:4b}"
+DEFAULT_OLLAMA_PORT="${DSH_TOOLS_OLLAMA_PORT:-11434}"
+DEFAULT_DIFY_REPO="${DSH_TOOLS_DIFY_REPO:-https://github.com/langgenius/dify.git}"
+DEFAULT_DIFY_DIR="${DSH_TOOLS_DIFY_DIR:-$HOME/dify}"
+
 readonly EXIT_USAGE=2
 readonly EXIT_MISSING=3
 readonly EXIT_INVALID=4
@@ -117,6 +131,47 @@ validate_hostlist() {
     return 0
 }
 
+validate_url() {
+    local value="$1"
+    [ -z "$value" ] && return 0
+    [[ "$value" =~ ^https?://[^[:space:]]+$ ]]
+}
+
+validate_urllist() {
+    local value="$1"
+    local item
+    local -a items=()
+
+    [ -z "$value" ] && return 0
+    IFS=',' read -r -a items <<<"$value"
+    for item in "${items[@]}"; do
+        [ -z "$item" ] && continue
+        validate_url "$item" || return 1
+    done
+    return 0
+}
+
+validate_model_name() {
+    local value="$1"
+    [ -z "$value" ] && return 0
+    [[ "$value" =~ ^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$ ]]
+}
+
+validate_path() {
+    local value="$1"
+    [ -z "$value" ] && return 0
+    [[ "$value" != *" "* ]] || return 1
+    [[ "$value" == /* || "$value" == "~"* || "$value" == \$HOME* ]]
+}
+
+validate_int() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+validate_yesno() {
+    [ "$1" = "yes" ] || [ "$1" = "no" ]
+}
+
 # ---------------------------------------------------------------- 参数契约
 
 # 默认值支持运行时取值，避免把本机信息写死进仓库：
@@ -192,7 +247,8 @@ load_spec() {
             optional "@gateway" validate_dns
         ;;
     mgt-god.sh)
-        # 无参进入交互菜单；带参时按 `函数名 [参数...]` 直接调用
+        # 无参进入交互菜单；带参时按 `函数名 [参数...]` 直接调用。
+        # 管理动作本身靠菜单选择，因此不做参数契约。
         PARAM_MODE="passthrough"
         ;;
     hardening-os.sh)
@@ -206,9 +262,67 @@ load_spec() {
         add_param ops_user \
             "运维账号名，加入默认用户白名单" \
             optional "ck" validate_username "ops-user"
+        add_param pass_min_len \
+            "密码最小长度" \
+            optional "8" validate_int "pass-min-len"
+        add_param pass_max_days \
+            "密码最长有效期（天）" \
+            optional "90" validate_int "pass-max-days"
+        add_param pass_min_days \
+            "密码最短有效期（天）" \
+            optional "0" validate_int "pass-min-days"
+        add_param pass_warn_age \
+            "密码过期前警告天数" \
+            optional "14" validate_int "pass-warn-age"
+        add_param failed_attempts \
+            "登录失败锁定阈值" \
+            optional "5" validate_int "failed-attempts"
+        add_param unlock_time \
+            "账户锁定时间（秒）" \
+            optional "300" validate_int "unlock-time"
+        add_param permit_root_login \
+            "是否允许 root 直接登录（yes/no）" \
+            optional "no" validate_yesno "permit-root-login"
+        add_param permit_password_login \
+            "是否允许密码登录（yes/no）" \
+            optional "no" validate_yesno "permit-password-login"
         ;;
-    init_docker.sh | init_llm.sh | init_dify.sh)
-        PARAM_MODE="passthrough"
+    init_docker.sh)
+        PARAM_MODE="params"
+        add_param apt_mirror "APT 镜像地址" \
+            optional "$DEFAULT_APT_MIRROR" validate_url "apt-mirror"
+        add_param docker_repo "Docker CE 仓库地址" \
+            optional "$DEFAULT_DOCKER_REPO" validate_url "docker-repo"
+        add_param registry_mirrors "镜像加速器地址，逗号分隔" \
+            optional "$DEFAULT_DOCKER_MIRRORS" validate_urllist "registry-mirrors"
+        ;;
+    init_llm.sh)
+        PARAM_MODE="params"
+        add_param apt_mirror "APT 镜像地址" \
+            optional "$DEFAULT_APT_MIRROR" validate_url "apt-mirror"
+        add_param docker_repo "Docker CE 仓库地址" \
+            optional "$DEFAULT_DOCKER_REPO" validate_url "docker-repo"
+        add_param registry_mirrors "镜像加速器地址，逗号分隔" \
+            optional "$DEFAULT_DOCKER_MIRRORS" validate_urllist "registry-mirrors"
+        add_param chat_model "对话模型（含版本标签）" \
+            optional "$DEFAULT_CHAT_MODEL" validate_model_name "chat-model"
+        add_param embed_model "嵌入模型（含版本标签）" \
+            optional "$DEFAULT_EMBED_MODEL" validate_model_name "embed-model"
+        add_param ollama_port "Ollama 监听端口" \
+            optional "$DEFAULT_OLLAMA_PORT" validate_port "ollama-port"
+        ;;
+    init_dify.sh)
+        PARAM_MODE="params"
+        add_param apt_mirror "APT 镜像地址" \
+            optional "$DEFAULT_APT_MIRROR" validate_url "apt-mirror"
+        add_param docker_repo "Docker CE 仓库地址" \
+            optional "$DEFAULT_DOCKER_REPO" validate_url "docker-repo"
+        add_param registry_mirrors "镜像加速器地址，逗号分隔" \
+            optional "$DEFAULT_DOCKER_MIRRORS" validate_urllist "registry-mirrors"
+        add_param dify_repo "Dify 仓库地址" \
+            optional "$DEFAULT_DIFY_REPO" validate_url "dify-repo"
+        add_param dify_dir "Dify 检出目录" \
+            optional "$DEFAULT_DIFY_DIR" validate_path "dify-dir"
         ;;
     *)
         PARAM_MODE="passthrough"

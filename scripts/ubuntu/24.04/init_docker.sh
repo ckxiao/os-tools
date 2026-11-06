@@ -9,30 +9,35 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
     cat <<EOF
-用法: bash init_docker.sh
+用法: bash init_docker.sh [选项]
 
 安装 Docker CE 并配置镜像加速器，随后启动所有处于 Exited/Created 状态的容器。
 
-环境变量:
-  DSH_TOOLS_APT_MIRROR        APT 镜像地址
-  DSH_TOOLS_DOCKER_REPO       Docker CE 仓库地址
-  DSH_TOOLS_DOCKER_MIRRORS    镜像加速器地址，逗号分隔
-  DSH_TOOLS_FORCE=1           忽略已完成步骤，强制重跑
+选项（均有默认值，可省略）:
+  --apt-mirror=URL        APT 镜像地址，默认 $APT_MIRROR
+  --docker-repo=URL       Docker CE 仓库地址，默认 $DOCKER_REPO_BASE
+  --registry-mirrors=URLs 镜像加速器，逗号分隔，默认内置列表
+  -h, --help              显示帮助
+
+环境变量与选项等价:
+  DSH_TOOLS_APT_MIRROR / DSH_TOOLS_DOCKER_REPO / DSH_TOOLS_DOCKER_MIRRORS
+  DSH_TOOLS_FORCE=1       忽略已完成步骤，强制重跑
 EOF
 }
 
-case "${1:-}" in
--h | --help)
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     usage
     exit 0
-    ;;
-"") ;;
-*)
-    echo "未知参数: $1" >&2
-    usage
+fi
+
+parse_env_opts \
+    "apt-mirror=DSH_TOOLS_APT_MIRROR" \
+    "docker-repo=DSH_TOOLS_DOCKER_REPO" \
+    "registry-mirrors=DSH_TOOLS_DOCKER_MIRRORS" \
+    -- "$@" || {
+    usage >&2
     exit 2
-    ;;
-esac
+}
 
 require_root
 init_logging init_docker

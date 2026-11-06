@@ -9,32 +9,41 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
     cat <<EOF
-用法: bash init_dify.sh
+用法: bash init_dify.sh [选项]
 
 安装 Docker，拉取 dify 仓库并通过 docker compose 启动或更新服务。
 更新流程会先执行 docker compose down，正在运行的应用会短暂中断。
 
-环境变量:
-  DSH_TOOLS_APT_MIRROR        APT 镜像地址
-  DSH_TOOLS_DOCKER_REPO       Docker CE 仓库地址
-  DSH_TOOLS_DOCKER_MIRRORS    镜像加速器地址，逗号分隔
-  DSH_TOOLS_DIFY_REPO         Dify 仓库地址，默认官方仓库
-  DSH_TOOLS_FORCE=1           忽略已完成步骤，强制重跑
+选项（均有默认值，可省略）:
+  --apt-mirror=URL        APT 镜像地址，默认 $APT_MIRROR
+  --docker-repo=URL       Docker CE 仓库地址，默认 $DOCKER_REPO_BASE
+  --registry-mirrors=URLs 镜像加速器，逗号分隔，默认内置列表
+  --dify-repo=URL         Dify 仓库地址，默认 ${DSH_TOOLS_DIFY_REPO:-https://github.com/langgenius/dify.git}
+  --dify-dir=PATH         Dify 检出目录，默认 \${HOME}/dify
+  -h, --help              显示帮助
+
+环境变量与选项等价:
+  DSH_TOOLS_APT_MIRROR / DSH_TOOLS_DOCKER_REPO / DSH_TOOLS_DOCKER_MIRRORS /
+  DSH_TOOLS_DIFY_REPO / DSH_TOOLS_DIFY_DIR
+  DSH_TOOLS_FORCE=1       忽略已完成步骤，强制重跑
 EOF
 }
 
-case "${1:-}" in
--h | --help)
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     usage
     exit 0
-    ;;
-"") ;;
-*)
-    echo "未知参数: $1" >&2
-    usage
+fi
+
+parse_env_opts \
+    "apt-mirror=DSH_TOOLS_APT_MIRROR" \
+    "docker-repo=DSH_TOOLS_DOCKER_REPO" \
+    "registry-mirrors=DSH_TOOLS_DOCKER_MIRRORS" \
+    "dify-repo=DSH_TOOLS_DIFY_REPO" \
+    "dify-dir=DSH_TOOLS_DIFY_DIR" \
+    -- "$@" || {
+    usage >&2
     exit 2
-    ;;
-esac
+}
 
 require_root
 init_logging init_dify
@@ -48,16 +57,18 @@ start_stopped_containers
 green_echo "开始部署 dify..."
 # 拉取 dify 代码
 green_echo "获取 dify 代码状态..."
-cd ~
-if [ -d "dify" ]; then
-    green_echo "dify 代码已经存在，跳过拉取..."
+dify_dir="${DSH_TOOLS_DIFY_DIR:-$HOME/dify}"
+dify_repo="${DSH_TOOLS_DIFY_REPO:-https://github.com/langgenius/dify.git}"
+mkdir -p "$(dirname "$dify_dir")"
+if [ -d "$dify_dir" ]; then
+    green_echo "dify 代码已经存在（$dify_dir），跳过拉取..."
 else
     retryflag_max=10
     retryflag=0
     while true ; do
         retryflag=$((retryflag + 1))
-        green_echo "从 Github 拉取 dify 代码..."
-        git clone "${DSH_TOOLS_DIFY_REPO:-https://github.com/langgenius/dify.git}"
+        green_echo "从 Github 拉取 dify 代码到 $dify_dir..."
+        git clone "$dify_repo" "$dify_dir"
 
         # 检查 git clone 命令是否成功
         if [ $? -eq 0 ]; then
@@ -75,7 +86,7 @@ else
 fi
 #endregion
 #region 更新 dify
-cd dify/docker
+cd "$dify_dir/docker"
 
 green_echo "停止并删除 dify 服务..."
 docker compose down
@@ -99,7 +110,7 @@ else
     green_echo "dify 未部署, 现在开始部署 dify..."
 
     # 切换到 docker 目录
-    cd dify/docker || {
+    cd "$dify_dir/docker" || {
         green_echo "无法切换到 dify/docker 目录"
         exit 1
     }

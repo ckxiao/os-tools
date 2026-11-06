@@ -117,6 +117,16 @@ usage() {
   --ssh-port=PORT         SSH 监听端口，默认 22
   --allow-hosts=IP[,IP]   允许 SSH 登录的来源 IP，留空表示不做限制
   --ops-user=NAME         运维账号名，默认 ck
+
+密码与登录策略（均有默认值）:
+  --pass-min-len=N        密码最小长度，默认 8
+  --pass-max-days=N       密码最长有效期（天），默认 90
+  --pass-min-days=N       密码最短有效期（天），默认 0
+  --pass-warn-age=N       过期前警告天数，默认 14
+  --failed-attempts=N     登录失败锁定阈值，默认 5
+  --unlock-time=N         账户锁定时间（秒），默认 300
+  --permit-root-login=Y   是否允许 root 直接登录，默认 no
+  --permit-password-login=Y 是否允许密码登录，默认 no
   -h, --help              显示帮助
 
 说明:
@@ -124,11 +134,27 @@ usage() {
   hosts.allow 依赖 sshd 的 libwrap 支持，未编译该特性时不生效，建议配合 ufw 限制来源。
 
 环境变量:
-  HARDENING_SSH_PORT         等同于 --ssh-port
-  HARDENING_ALLOW_HOSTS      等同于 --allow-hosts
-  HARDENING_OPS_USER         等同于 --ops-user
+  HARDENING_SSH_PORT / HARDENING_ALLOW_HOSTS / HARDENING_OPS_USER
+  HARDENING_PASS_MIN_LEN / HARDENING_PASS_MAX_DAYS / HARDENING_PASS_MIN_DAYS
+  HARDENING_PASS_WARN_AGE / HARDENING_FAILED_ATTEMPTS / HARDENING_UNLOCK_TIME
+  HARDENING_PERMIT_ROOT_LOGIN / HARDENING_PERMIT_PASSWORD_LOGIN
   HARDENING_ALLOW_NO_KEY=1   未部署 SSH 公钥时仍强制继续（默认中止，防止锁死）
 EOF
+}
+
+# 策略类选项统一由这里映射到变量，避免每个选项写两遍分支
+simple_opt_var() {
+    case "$1" in
+    pass-min-len) echo PASS_MIN_LEN ;;
+    pass-max-days) echo PASS_MAX_DAYS ;;
+    pass-min-days) echo PASS_MIN_DAYS ;;
+    pass-warn-age) echo PASS_WARN_AGE ;;
+    failed-attempts) echo FAILED_LOGIN_ATTEMPTS ;;
+    unlock-time) echo UNLOCK_TIME ;;
+    permit-root-login) echo PERMIT_ROOT_LOGIN ;;
+    permit-password-login) echo PERMIT_PASSWD_LOGIN ;;
+    *) return 1 ;;
+    esac
 }
 
 parse_args() {
@@ -138,7 +164,16 @@ parse_args() {
     if [ -n "${HARDENING_ALLOW_HOSTS:-}" ]; then
         IFS=',' read -r -a SSH_LOGIN_HOSTS <<<"$HARDENING_ALLOW_HOSTS"
     fi
+    [ -n "${HARDENING_PASS_MIN_LEN:-}" ] && PASS_MIN_LEN="$HARDENING_PASS_MIN_LEN"
+    [ -n "${HARDENING_PASS_MAX_DAYS:-}" ] && PASS_MAX_DAYS="$HARDENING_PASS_MAX_DAYS"
+    [ -n "${HARDENING_PASS_MIN_DAYS:-}" ] && PASS_MIN_DAYS="$HARDENING_PASS_MIN_DAYS"
+    [ -n "${HARDENING_PASS_WARN_AGE:-}" ] && PASS_WARN_AGE="$HARDENING_PASS_WARN_AGE"
+    [ -n "${HARDENING_FAILED_ATTEMPTS:-}" ] && FAILED_LOGIN_ATTEMPTS="$HARDENING_FAILED_ATTEMPTS"
+    [ -n "${HARDENING_UNLOCK_TIME:-}" ] && UNLOCK_TIME="$HARDENING_UNLOCK_TIME"
+    [ -n "${HARDENING_PERMIT_ROOT_LOGIN:-}" ] && PERMIT_ROOT_LOGIN="$HARDENING_PERMIT_ROOT_LOGIN"
+    [ -n "${HARDENING_PERMIT_PASSWORD_LOGIN:-}" ] && PERMIT_PASSWD_LOGIN="$HARDENING_PERMIT_PASSWORD_LOGIN"
 
+    local key var
     while [ $# -gt 0 ]; do
         case "$1" in
         --ssh-port=*) SSH_PORT="${1#*=}" ;;
@@ -155,6 +190,30 @@ parse_args() {
         --ops-user)
             shift
             OPS_USER="${1:-}"
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        --*=*)
+            key="${1%%=*}"
+            key="${key#--}"
+            if var="$(simple_opt_var "$key")"; then
+                printf -v "$var" '%s' "${1#*=}"
+            else
+                echo "未知参数: $1（使用 -h 查看帮助）" >&2
+                exit 2
+            fi
+            ;;
+        --*)
+            key="${1#--}"
+            if var="$(simple_opt_var "$key")"; then
+                shift
+                printf -v "$var" '%s' "${1:-}"
+            else
+                echo "未知参数: $1（使用 -h 查看帮助）" >&2
+                exit 2
+            fi
             ;;
         -h | --help)
             usage
@@ -188,6 +247,52 @@ validate_config() {
             return 1
         fi
     done
+
+    if ! [[ "$PASS_MIN_LEN" =~ ^[0-9]+$ ]] || [ "$PASS_MIN_LEN" -lt 4 ] || [ "$PASS_MIN_LEN" -gt 64 ]; then
+        echo "[X] 密码最小长度非法: ${PASS_MIN_LEN}（应为 4-64）" >&2
+        return 1
+    fi
+
+    if ! [[ "$PASS_MAX_DAYS" =~ ^[0-9]+$ ]] || [ "$PASS_MAX_DAYS" -lt 1 ] || [ "$PASS_MAX_DAYS" -gt 99999 ]; then
+        echo "[X] 密码最长有效期非法: ${PASS_MAX_DAYS}（应为 1-99999）" >&2
+        return 1
+    fi
+
+    if ! [[ "$PASS_MIN_DAYS" =~ ^[0-9]+$ ]] || [ "$PASS_MIN_DAYS" -gt "$PASS_MAX_DAYS" ]; then
+        echo "[X] 密码最短有效期非法: ${PASS_MIN_DAYS}（应为 0 且不超过最长有效期）" >&2
+        return 1
+    fi
+
+    if ! [[ "$PASS_WARN_AGE" =~ ^[0-9]+$ ]]; then
+        echo "[X] 警告天数非法: ${PASS_WARN_AGE}" >&2
+        return 1
+    fi
+
+    if ! [[ "$FAILED_LOGIN_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$FAILED_LOGIN_ATTEMPTS" -lt 1 ] || [ "$FAILED_LOGIN_ATTEMPTS" -gt 20 ]; then
+        echo "[X] 登录失败阈值非法: ${FAILED_LOGIN_ATTEMPTS}（应为 1-20）" >&2
+        return 1
+    fi
+
+    if ! [[ "$UNLOCK_TIME" =~ ^[0-9]+$ ]] || [ "$UNLOCK_TIME" -lt 30 ]; then
+        echo "[X] 账户锁定时间非法: ${UNLOCK_TIME}（应不小于 30 秒）" >&2
+        return 1
+    fi
+
+    case "$PERMIT_ROOT_LOGIN" in
+    yes | no) ;;
+    *)
+        echo "[X] permit-root-login 只能是 yes 或 no: ${PERMIT_ROOT_LOGIN}" >&2
+        return 1
+        ;;
+    esac
+
+    case "$PERMIT_PASSWD_LOGIN" in
+    yes | no) ;;
+    *)
+        echo "[X] permit-password-login 只能是 yes 或 no: ${PERMIT_PASSWD_LOGIN}" >&2
+        return 1
+        ;;
+    esac
 
     return 0
 }

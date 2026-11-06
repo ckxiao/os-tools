@@ -16,9 +16,64 @@ DSH_STATE_DIR="${DSH_STATE_DIR:-/var/lib/dsh-tools/state}"
 DSH_LOG_DIR="${DSH_LOG_DIR:-/var/log/dsh-tools}"
 DSH_LOG_SLEEP="${DSH_LOG_SLEEP:-2}"
 
-APT_MIRROR="${DSH_TOOLS_APT_MIRROR:-https://mirrors.aliyun.com/ubuntu}"
-DOCKER_REPO_BASE="${DSH_TOOLS_DOCKER_REPO:-https://mirrors.aliyun.com/docker-ce/linux/ubuntu}"
-DOCKER_REGISTRY_MIRRORS="${DSH_TOOLS_DOCKER_MIRRORS:-https://docker.1panel.live,https://hub.rat.dev,https://docker.m.daocloud.io,https://dockerproxy.cn}"
+# 可配置项的默认值只在这里定义一次：脚本启动时读取一次，
+# 命令行选项解析后调用 reload_config 重新读取。
+reload_config() {
+    APT_MIRROR="${DSH_TOOLS_APT_MIRROR:-https://mirrors.aliyun.com/ubuntu}"
+    DOCKER_REPO_BASE="${DSH_TOOLS_DOCKER_REPO:-https://mirrors.aliyun.com/docker-ce/linux/ubuntu}"
+    DOCKER_REGISTRY_MIRRORS="${DSH_TOOLS_DOCKER_MIRRORS:-https://docker.1panel.live,https://hub.rat.dev,https://docker.m.daocloud.io,https://dockerproxy.cn}"
+}
+reload_config
+
+# 把 --选项=值 / --选项 值 映射为环境变量，供各原子脚本共用。
+# 用法：parse_env_opts "apt-mirror=DSH_TOOLS_APT_MIRROR" ... -- "$@"
+# 未知选项返回 2，由调用方打印用法。
+parse_env_opts() {
+    local -a mapping=()
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+        mapping+=("$1")
+        shift
+    done
+    [ "${1:-}" = "--" ] && shift
+
+    local arg key value pair var
+    while [ $# -gt 0 ]; do
+        arg="$1"
+        shift
+        case "$arg" in
+        --*=*)
+            key="${arg%%=*}"
+            key="${key#--}"
+            value="${arg#*=}"
+            ;;
+        --*)
+            key="${arg#--}"
+            value="${1:-}"
+            [ $# -gt 0 ] && shift
+            ;;
+        *)
+            red_echo "未知参数: $arg"
+            return 2
+            ;;
+        esac
+
+        var=""
+        for pair in "${mapping[@]}"; do
+            if [ "${pair%%=*}" = "$key" ]; then
+                var="${pair#*=}"
+                break
+            fi
+        done
+        if [ -z "$var" ]; then
+            red_echo "未知选项: --$key（用 --help 查看可用选项）"
+            return 2
+        fi
+        export "$var=$value"
+    done
+
+    reload_config
+    return 0
+}
 
 # ---------------------------------------------------------------- 日志
 

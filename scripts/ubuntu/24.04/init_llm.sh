@@ -9,33 +9,43 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
     cat <<EOF
-用法: bash init_llm.sh
+用法: bash init_llm.sh [选项]
 
 安装 Docker 与 Ollama，拉取对话模型与嵌入模型，并对 API 做一次冒烟测试。
-Ollama 监听 0.0.0.0:11434，部署在公网主机时请自行增加认证或网络 ACL。
+Ollama 监听 0.0.0.0，部署在公网主机时请自行增加认证或网络 ACL。
 
-环境变量:
-  DSH_TOOLS_APT_MIRROR        APT 镜像地址
-  DSH_TOOLS_DOCKER_REPO       Docker CE 仓库地址
-  DSH_TOOLS_DOCKER_MIRRORS    镜像加速器地址，逗号分隔
-  DSH_TOOLS_LLM_MODEL         对话模型，默认 qwen3:8b
-  DSH_TOOLS_EMBED_MODEL       嵌入模型，默认 qwen3-embedding:4b
-  DSH_TOOLS_FORCE=1           忽略已完成步骤，强制重跑
+选项（均有默认值，可省略）:
+  --apt-mirror=URL        APT 镜像地址，默认 $APT_MIRROR
+  --docker-repo=URL       Docker CE 仓库地址，默认 $DOCKER_REPO_BASE
+  --registry-mirrors=URLs 镜像加速器，逗号分隔，默认内置列表
+  --chat-model=NAME       对话模型，默认 ${DSH_TOOLS_LLM_MODEL:-qwen3:8b}
+  --embed-model=NAME      嵌入模型，默认 ${DSH_TOOLS_EMBED_MODEL:-qwen3-embedding:4b}
+  --ollama-port=PORT      Ollama 端口，默认 ${DSH_TOOLS_OLLAMA_PORT:-11434}
+  -h, --help              显示帮助
+
+环境变量与选项等价:
+  DSH_TOOLS_APT_MIRROR / DSH_TOOLS_DOCKER_REPO / DSH_TOOLS_DOCKER_MIRRORS /
+  DSH_TOOLS_LLM_MODEL / DSH_TOOLS_EMBED_MODEL / DSH_TOOLS_OLLAMA_PORT
+  DSH_TOOLS_FORCE=1       忽略已完成步骤，强制重跑
 EOF
 }
 
-case "${1:-}" in
--h | --help)
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     usage
     exit 0
-    ;;
-"") ;;
-*)
-    echo "未知参数: $1" >&2
-    usage
+fi
+
+parse_env_opts \
+    "apt-mirror=DSH_TOOLS_APT_MIRROR" \
+    "docker-repo=DSH_TOOLS_DOCKER_REPO" \
+    "registry-mirrors=DSH_TOOLS_DOCKER_MIRRORS" \
+    "chat-model=DSH_TOOLS_LLM_MODEL" \
+    "embed-model=DSH_TOOLS_EMBED_MODEL" \
+    "ollama-port=DSH_TOOLS_OLLAMA_PORT" \
+    -- "$@" || {
+    usage >&2
     exit 2
-    ;;
-esac
+}
 
 require_root
 init_logging init_llm
@@ -49,6 +59,7 @@ start_stopped_containers
 green_echo "部署 Ollama..."
 model_name="${DSH_TOOLS_LLM_MODEL:-qwen3:8b}"                  # 对话模型名称及版本号
 model_name_embedding="${DSH_TOOLS_EMBED_MODEL:-qwen3-embedding:4b}" # Embedding 模型名称
+ollama_port="${DSH_TOOLS_OLLAMA_PORT:-11434}"                     # Ollama 监听端口
 
 # 拉取 Ollama 镜像
 green_echo "拉取 ollama 镜像..."
@@ -68,10 +79,10 @@ if sudo docker ps -a | grep -q "ollama"; then
 else
     # 容器不存在，创建新容器
     green_echo "创建新的 ollama 容器..."
-    sudo docker run -d -e OLLAMA_HOST=0.0.0.0 -v $HOME/ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+    sudo docker run -d -e OLLAMA_HOST=0.0.0.0 -v $HOME/ollama:/root/.ollama -p ${ollama_port}:${ollama_port} --name ollama ollama/ollama
 fi
 #防火墙端口放开
-sudo ufw allow 11434/tcp
+sudo ufw allow ${ollama_port}/tcp
 sudo ufw reload
 
 #检查 Ollama 容器是否正在运行
@@ -80,7 +91,7 @@ attempt=0 # 最大等待秒数
 attempt_timeout=30
 check_interval=2 # 检测间隔（秒）
 while true; do
-    if curl -s localhost:11434 >/dev/null; then
+    if curl -s localhost:${ollama_port} >/dev/null; then
 green_echo "✅ ollama 服务已就绪..."
 break
     else
@@ -174,7 +185,7 @@ response=$(curl -sS -m 120 -X POST \
     -w "\nhttp_status:%{http_code}" \
     -H "Content-Type: application/json" \
     -d "$test_payload" \
-    http://localhost:11434/api/chat 2>&1)
+    http://localhost:${ollama_port}/api/chat 2>&1)
 local exit_code=$?
 local end_time=$(date +%s)
 local duration=$((end_time - start_time))
@@ -280,10 +291,10 @@ if test_ollama_chat_api; then
 green_echo "Ollama 部署成功!"
 green_echo "--------------chat模型信息--------------------------"
 echo "模型名称: $model_name"
-echo "LLM API地址: http://localhost:11434"
+echo "LLM API地址: http://localhost:${ollama_port}"
 echo "测试命令示例:"
 cat <<EOF
-        curl -X POST http://localhost:11434/api/chat \
+        curl -X POST http://localhost:${ollama_port}/api/chat \
           -H "Content-Type: application/json" \
           -d '{
             "model": "$model_name",
@@ -307,14 +318,14 @@ fi
 # 简化embedding测试
 prompt="hello"
 data=$(jq -n --arg model "$model_name_embedding" --arg prompt "$prompt" '{model: $model, prompt: $prompt}')
-response=$(curl -sS -m 60 http://localhost:11434/api/embeddings -d "$data")
+response=$(curl -sS -m 60 http://localhost:${ollama_port}/api/embeddings -d "$data")
 
 green_echo "--------------Embedding模型信息--------------------------"
 echo "嵌入模型名称: $model_name_embedding"
-echo "Embedding 地址: http://localhost:11434/api/embeddings"
+echo "Embedding 地址: http://localhost:${ollama_port}/api/embeddings"
 echo "测试命令示例:"
 cat <<EOF
-    curl http://localhost:11434/api/embeddings -d '{
+    curl http://localhost:${ollama_port}/api/embeddings -d '{
        "model": "$model_name_embedding",
        "prompt": "hello"
        }'

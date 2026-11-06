@@ -572,7 +572,7 @@ list_scripts() {
         IFS='|' read -r id family version path profile_name script_id file script_title desc risk root args <<<"$line"
         [[ "$id" == "$wanted" ]] || continue
         case "$args" in
-        prompt) printf '%-5s %-24s %-20s [需参数] %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
+        prompt) printf '%-5s %-24s %-20s [可配置] %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
         passthrough) printf '%-5s %-24s %-20s [可带参] %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
         *) printf '%-5s %-24s %-20s %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
         esac
@@ -862,8 +862,8 @@ review_script_args() {
             [[ -n "${P_FLAG[$i]}" ]] && label="--${P_FLAG[$i]}"
             shown="${P_VALUE[$i]}"
             [[ -z "$shown" ]] && shown="(空)"
-            printf '  %2d) %-18s = %-32s %s\n' \
-                "$((i + 1))" "$label" "$shown" "${P_PROMPT[$i]}"
+            printf '  %2d) %-20s %s\n' "$((i + 1))" "$label" "${P_PROMPT[$i]}"
+            printf '      %-20s = %s\n' "" "$shown"
         done
         printf '  %2s  %-18s   %s\n' "0" "确认并执行" "直接回车等同"
         printf '  %2s  %-18s   %s\n' "d" "恢复默认值" ""

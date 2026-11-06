@@ -195,14 +195,45 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh \
 bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh
 ```
 
-**`init_docker.sh` / `init_llm.sh` / `init_dify.sh`** — 无位置参数，配置走环境变量
+**`init_docker.sh`** — 换源与镜像加速，全部有默认值
 
 ```bash
 bash scripts/ubuntu/24.04/run.sh --describe init_docker.sh
+
+# 全部用默认值
 bash scripts/ubuntu/24.04/run.sh --collect init_docker.sh
+
+# 指定内网源
+bash scripts/ubuntu/24.04/run.sh --collect init_docker.sh \
+  --apt-mirror=http://mirrors.intra/ubuntu \
+  --docker-repo=http://mirrors.intra/docker-ce/linux/ubuntu
 ```
 
-**`mgt-god.sh`** — 参数原样透传（`函数名 [参数...]`）
+**`init_llm.sh`** — 模型名称即版本，可逐项指定
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --describe init_llm.sh
+
+# 默认 qwen3:8b + qwen3-embedding:4b
+bash scripts/ubuntu/24.04/run.sh --collect init_llm.sh
+
+# 换模型与端口
+bash scripts/ubuntu/24.04/run.sh --collect init_llm.sh \
+  --chat-model=qwen3:14b --embed-model=bge-m3:latest --ollama-port=11500
+```
+
+**`init_dify.sh`** — 仓库地址与检出目录
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --describe init_dify.sh
+
+bash scripts/ubuntu/24.04/run.sh --collect init_dify.sh
+
+bash scripts/ubuntu/24.04/run.sh --collect init_dify.sh \
+  --dify-repo=https://gitee.com/mirrors/dify.git --dify-dir=/opt/dify
+```
+
+**`mgt-god.sh`** — 参数原样透传（`函数名 [参数...]`），不参与参数契约
 
 ```bash
 bash scripts/ubuntu/24.04/run.sh --describe mgt-god.sh
@@ -226,20 +257,29 @@ bash scripts/ubuntu/24.04/run.sh --collect mgt-god.sh check_disk_usage
 
 ### 菜单里的参数复核
 
-在菜单中选中脚本后不会立即执行，而是先打印该脚本的全部参数及默认值：
+在菜单中选中脚本后不会立即执行，而是先打印该脚本的全部参数及默认值（以 `init_llm.sh` 为例）：
 
 ```text
-当前参数（共 3 项，均为脚本默认值，可修改）
-   1) hostname           = node01                          目标主机名，默认沿用当前主机名
-   2) ip_prefix          = 192.168.1.20/24                 静态地址及前缀，默认沿用当前地址
-   3) dns                = 223.5.5.5                       DNS 地址，默认使用网关
+当前参数（共 6 项，均为脚本默认值，可修改）
+   1) --apt-mirror         APT 镜像地址
+                           = https://mirrors.aliyun.com/ubuntu
+   2) --docker-repo        Docker CE 仓库地址
+                           = https://mirrors.aliyun.com/docker-ce/linux/ubuntu
+   3) --registry-mirrors   镜像加速器地址，逗号分隔
+                           = https://docker.1panel.live,https://hub.rat.dev,...
+   4) --chat-model         对话模型（含版本标签）
+                           = qwen3:8b
+   5) --embed-model        嵌入模型（含版本标签）
+                           = qwen3-embedding:4b
+   6) --ollama-port        Ollama 监听端口
+                           = 11434
    0  确认并执行      直接回车等同
    d  恢复默认值
    q  取消
 输入编号修改，0 或回车执行:
 ```
 
-输入编号可逐项修改，`d` 恢复默认值，`0` 或回车进入风险确认，确认后才真正执行。非交互场景（`DSH_TOOLS_YES=1`）自动跳过复核；`DSH_TOOLS_REVIEW=0` 可单独关闭复核而保留确认。
+输入编号可逐项修改，`d` 恢复默认值，`0` 或回车进入风险确认，确认后才真正执行。除 `mgt-god.sh` 外的脚本都参与复核：`init-os.sh`、`hardening-os.sh` 与三个部署脚本的镜像源、模型版本、端口、策略阈值都会列出来。非交互场景（`DSH_TOOLS_YES=1`）自动跳过复核；`DSH_TOOLS_REVIEW=0` 可单独关闭复核而保留确认。
 
 ### 入参形式
 
@@ -253,14 +293,23 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh 2222 10.0.0.5,10.0.0.
 bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops-user=ops
 ```
 
-当前 `ubuntu/24.04` 的参数契约：
+当前 `ubuntu/24.04` 的参数契约（所有参数均有默认值）：
 
 | 脚本 | 参数 | 默认值 |
 | --- | --- | --- |
 | `init-os.sh` | `hostname` / `ip_prefix` / `dns`（位置参数） | 当前主机名 / 当前地址 / 网关 |
 | `hardening-os.sh` | `--ssh-port` / `--allow-hosts` / `--ops-user` | `22` / 空（不限制来源） / `ck` |
-| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` | 无位置参数 | 见各脚本 `--help` 的环境变量 |
+|  | `--pass-min-len` / `--pass-max-days` / `--pass-min-days` / `--pass-warn-age` | `8` / `90` / `0` / `14` |
+|  | `--failed-attempts` / `--unlock-time` | `5` / `300` |
+|  | `--permit-root-login` / `--permit-password-login` | `no` / `no` |
+| `init_docker.sh` | `--apt-mirror` / `--docker-repo` / `--registry-mirrors` | 阿里云源 / 阿里云 Docker CE / 内置四个加速器 |
+| `init_llm.sh` | 同 `init_docker.sh`，另加： |  |
+|  | `--chat-model` / `--embed-model` / `--ollama-port` | `qwen3:8b` / `qwen3-embedding:4b` / `11434` |
+| `init_dify.sh` | 同 `init_docker.sh`，另加： |  |
+|  | `--dify-repo` / `--dify-dir` | 官方仓库 / `$HOME/dify` |
 | `mgt-god.sh` | 原样透传 | 无参进入交互菜单 |
+
+默认值只在 `common.sh` 里定义一次，`run.sh` 与之共用；命令行选项解析后调用 `reload_config` 重新读取，因此选项、环境变量、默认值三者不会分叉。
 
 新增 OS 版本时，除了放脚本和登记 `catalog.tsv`，还需提供该版本目录下的 `run.sh`；缺失时 `menu.sh` 会降级为「原始参数直接透传」并给出警告。
 

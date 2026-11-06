@@ -147,9 +147,50 @@ test_collect_passthrough() {
     assert_status 0 "$RC" && assert_eq "check_disk_usage" "$OUTPUT"
 }
 
-test_collect_no_args_emits_nothing() {
+test_collect_docker_defaults() {
+    # 部署类脚本也有参数契约，未传参时输出全部默认值
     run_cmd bash "$RUNNER" --collect init_docker.sh
-    assert_status 0 "$RC" && assert_empty "$OUTPUT"
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "--apt-mirror=http" &&
+        assert_contains "$OUTPUT" "--docker-repo=http" &&
+        assert_contains "$OUTPUT" "--registry-mirrors=http"
+}
+
+test_describe_llm_shows_model_flags() {
+    run_cmd bash "$RUNNER" --describe init_llm.sh
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "--chat-model" &&
+        assert_contains "$OUTPUT" "--embed-model" &&
+        assert_contains "$OUTPUT" "--ollama-port"
+}
+
+test_collect_llm_overrides_models() {
+    run_cmd bash "$RUNNER" --collect init_llm.sh \
+        --chat-model=custom:1b --embed-model=custom-embed:0.6b --ollama-port=11500
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "--chat-model=custom:1b" &&
+        assert_contains "$OUTPUT" "--embed-model=custom-embed:0.6b" &&
+        assert_contains "$OUTPUT" "--ollama-port=11500"
+}
+
+test_collect_rejects_bad_port() {
+    run_cmd bash "$RUNNER" --collect init_llm.sh --ollama-port=70000
+    assert_status 4 "$RC"
+}
+
+test_parse_env_opts_maps_flag() {
+    # --选项 必须落到对应的 DSH_TOOLS_* 变量，并刷新 common.sh 的派生变量
+    local out
+    out="$(bash -c '. "$1"; parse_env_opts "apt-mirror=DSH_TOOLS_APT_MIRROR" -- --apt-mirror=http://m.test/u; printf "%s|%s" "$DSH_TOOLS_APT_MIRROR" "$APT_MIRROR"' _ "$COMMON" 2>&1)"
+    assert_contains "$out" "http://m.test/u|http://m.test/u"
+}
+
+test_hardening_policy_defaults() {
+    run_cmd bash "$RUNNER" --collect hardening-os.sh
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "--pass-min-len=8" &&
+        assert_contains "$OUTPUT" "--failed-attempts=5" &&
+        assert_contains "$OUTPUT" "--permit-root-login=no"
 }
 
 test_runner_unknown_command() {
