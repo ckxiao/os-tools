@@ -2,6 +2,53 @@
 
 公开的 Linux 运维脚本菜单。仓库根目录本身就是可发布目录，不依赖构建脚本，也不需要生成 `dist/` 子目录。
 
+## 快速开始
+
+以下命令可直接整段复制执行。
+
+进入交互菜单（推荐，自动下载并按 `SHA256SUMS` 校验）：
+
+```bash
+BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
+bash <(curl -fsSL "$BASE_URL/menu.sh") --set-base-url "$BASE_URL"
+```
+
+在本地仓库中运行：
+
+```bash
+bash menu.sh
+```
+
+非交互安装某个 OS 配置下的全部脚本：
+
+```bash
+BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
+bash <(curl -fsSL "$BASE_URL/menu.sh") \
+  --set-base-url "$BASE_URL" \
+  --profile ubuntu-24.04 \
+  --install-profile
+```
+
+按编号运行单个脚本（示例为 `7` 号 `opt.sh`）：
+
+```bash
+BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
+bash <(curl -fsSL "$BASE_URL/menu.sh") \
+  --set-base-url "$BASE_URL" \
+  --profile ubuntu-24.04 \
+  --run 7 -h example -a demo
+```
+
+需要 `init-os.sh` 时，把参数接在 `--run 1` 之后：
+
+```bash
+BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
+bash <(curl -fsSL "$BASE_URL/menu.sh") \
+  --set-base-url "$BASE_URL" \
+  --profile ubuntu-24.04 \
+  --run 1 node01 192.168.1.20/24 223.5.5.5
+```
+
 ## 目录结构
 
 ```text
@@ -44,11 +91,7 @@ scripts/kylin/v10/
 
 ## 菜单
 
-在本地仓库运行：
-
-```bash
-bash menu.sh
-```
+在仓库根目录执行 `bash menu.sh`，或使用上文「快速开始」中的在线命令。
 
 交互流程：
 
@@ -63,19 +106,13 @@ bash menu.sh
 
 ## GitHub Raw 使用
 
-假设仓库地址为：
-
-```text
-https://github.com/ckxiao/os-tools
-```
-
-则静态下载根地址为：
+静态下载根地址为：
 
 ```text
 https://raw.githubusercontent.com/ckxiao/os-tools/main
 ```
 
-下载并运行菜单：
+不支持进程替代（`<(...)`）的 shell 可以分两步执行：
 
 ```bash
 BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
@@ -83,47 +120,14 @@ curl -fsSL "$BASE_URL/menu.sh" -o /tmp/dsh-menu.sh
 bash /tmp/dsh-menu.sh --set-base-url "$BASE_URL"
 ```
 
-使用进程替代的便捷方式：
-
-```bash
-BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
-bash <(curl -fsSL "$BASE_URL/menu.sh") --set-base-url "$BASE_URL"
-```
-
-非交互安装 Ubuntu 24.04 下的全部脚本：
-
-```bash
-BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
-bash <(curl -fsSL "$BASE_URL/menu.sh") \
-  --set-base-url "$BASE_URL" \
-  --profile ubuntu-24.04 \
-  --install-profile
-```
-
-按需运行单个脚本：
-
-```bash
-BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
-bash <(curl -fsSL "$BASE_URL/menu.sh") \
-  --set-base-url "$BASE_URL" \
-  --profile ubuntu-24.04 \
-  --run 7 -h example -a demo
-```
+重要环境建议把 `BASE_URL` 中的 `main` 换成固定 commit SHA（形如 `https://raw.githubusercontent.com/ckxiao/os-tools/<commit>`），避免上游变更带来不可预期的脚本更新。
 
 ## GitHub Pages
 
-因为根目录已经包含全部静态文件，也可以把仓库根目录直接作为 GitHub Pages 发布源：
+仓库根目录已包含全部静态文件，也可直接作为 Pages 发布源。启用后把 `BASE_URL` 换成：
 
 ```text
 https://ckxiao.github.io/os-tools
-```
-
-启用 Pages 后，命令形式为：
-
-```bash
-BASE_URL="https://ckxiao.github.io/os-tools"
-curl -fsSL "$BASE_URL/menu.sh" -o /tmp/dsh-menu.sh
-bash /tmp/dsh-menu.sh --set-base-url "$BASE_URL"
 ```
 
 ## 更新脚本
