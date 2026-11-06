@@ -10271,7 +10271,7 @@ k8s_resource_config_apply() {
                 echo "$ns_list_snap"
                 read -p "请输入命名空间编号(default:none): " ns_numb
                 local namespace=$(echo "$ns_list_snap" | awk -v line="$((ns_numb + 1))" 'NR==line{print $2}')
-                [ $namespace = "NAME" ] && $namespace=
+                [ "$namespace" = "NAME" ] && namespace=""
                 read -p "请输入yaml文件路径: " filepath
                 green_echo "输入信息为- 命名空间: ${namespace:-未选择} | yaml文件路径: $filepath"
                 read -p "请确认操作(Y|N,default:Y): " areyouok
@@ -10282,7 +10282,7 @@ k8s_resource_config_apply() {
                 echo "$ns_list_snap"
                 read -p "请输入命名空间编号(default:none): " ns_numb
                 local namespace=$(echo "$ns_list_snap" | awk -v line="$((ns_numb + 1))" 'NR==line{print $2}')
-                [ $namespace = "NAME" ] && $namespace=
+                [ "$namespace" = "NAME" ] && namespace=""
                 read -p "请输入yaml文件路径: " filepath
                 green_echo "输入信息为- 命名空间: ${namespace:-未选择} | yaml文件路径: $filepath"
                 read -p "请确认操作(Y|N,default:Y): " areyouok

@@ -7,6 +7,6 @@ b26240a1a21e65ec34e4ec93ac978993119a5037977b67e600c4b19877344541 *scripts/ubuntu
 9fc7573f713a35755eee79b339e733eba9cbe219d4fcf2faa2556541971449bf *scripts/ubuntu/24.04/init_dify.sh
 7540d823bf2bd85c7147935cd3b4c68b738a2526f1f1b922c34e125d4b8e36dc *scripts/ubuntu/24.04/init_docker.sh
 9ccc3b5ebc9c777d7eb9da44f919c75ec9fb8b3e49cbe18d8ee478afaa7a74c1 *scripts/ubuntu/24.04/init_llm.sh
-46dea5fe97a68945a214add2de64b019784b4556aa3f1a2f0e9ccfc17633e274 *scripts/ubuntu/24.04/mgt-god.sh
+49d74fad6a285da18b91def51453eed3b27ab462f9ab20babd684d1b0e3dde02 *scripts/ubuntu/24.04/mgt-god.sh
 ebb1ba8f64d91c6b9f7e5e8ae593e6468a0bce9b289882ae1cf7f0bb62735fb7 *scripts/ubuntu/24.04/opt.sh
 81f2d386360e56038c4198dd2c237e61ab8162b46406ec420113151915550693 *scripts/ubuntu/24.04/run.sh
