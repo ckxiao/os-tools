@@ -26,7 +26,7 @@ X11_FORWARDING="no"         # 是否启用X11转发(yes/no)
 FAILED_LOGIN_ATTEMPTS=5     # 设置登录失败尝试次数限制
 UNLOCK_TIME=300             # 设置普通用户账户锁定时间(秒)
 ROOT_UNLOCK_TIME=600        # 设置root账户锁定时间(秒)
-SSH_LOGIN_HOSTS=("192.168.68.100",192.168.68.36)
+SSH_LOGIN_HOSTS=("192.168.68.100" "192.168.68.36") # 注意: 每个地址独立成一项，不要用逗号分隔
 OPS_USER="ck"
 
 # Shell会话管理设置
@@ -102,12 +102,23 @@ declare -A SYSCTL_PARAMS=(
 ###############################
 main() {
     echo "████████████████████████████████ 开始应用Ubuntu系统安全配置 ████████████████████████████████"
+
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "[X] 请使用 root 或 sudo 执行本脚本"
+        return 1
+    fi
+
     # 调用各配置函数
     firewall_setting
     configure_password_policy
     configure_user_audit
     set_important_permissions
-    configure_ssh_security
+    if ! configure_ssh_security; then
+        echo ""
+        echo "[X] SSH 加固未完成，为避免远程失联已中止后续步骤。"
+        echo "    请根据上方提示部署公钥或调整配置后重新执行。"
+        return 1
+    fi
     configure_shell_session
     setup_ssh_banner
     configure_auditd
@@ -177,24 +188,54 @@ configure_password_policy() {
     cp $PAM_COMMON_PASSWORD ${PAM_COMMON_PASSWORD}.bak.$(date +%Y%m%d) 2>/dev/null
     if [ "$PAM_PWQUALITY" = "yes" ]; then
         echo "配置密码复杂度检查..."
-        # 确保密码复杂度设置是幂等的
-        if egrep -q "^password\s.+pam_cracklib.so\s+.*retry=3\s.*minlen=\d+\s.*ucredit=-1\s.*lcredit=-1\s.*dcredit=-1\s.*ocredit=-1\s.*difok=3" $PAM_COMMON_PASSWORD; then
-            echo "密码复杂度设置已正确配置，无需修改"
-        else
-            sed -i '/^password\s\+.\+pam_cracklib.so/ s/^password\s\+.\+pam_cracklib.so\s\+.*$/password    requisite           pam_cracklib.so retry=3 minlen='"$PASS_MIN_LEN"' ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1 difok=3/' $PAM_COMMON_PASSWORD || {
+        # Ubuntu 22.04 起默认使用 pam_pwquality，旧版本为 pam_cracklib，两者分别处理
+        if grep -q 'pam_pwquality\.so' "$PAM_COMMON_PASSWORD"; then
+            PWQ_CONF="/etc/security/pwquality.conf"
+            if [ ! -f "$PWQ_CONF" ]; then
+                echo "    未找到 $PWQ_CONF，尝试安装 libpam-pwquality..."
+                apt-get install -y libpam-pwquality >/dev/null 2>&1
+            fi
+            if [ -f "$PWQ_CONF" ]; then
+                cp "$PWQ_CONF" "${PWQ_CONF}.bak.$(date +%Y%m%d)" 2>/dev/null
+                for item in \
+                    "minlen = $PASS_MIN_LEN" \
+                    "ucredit = -1" \
+                    "lcredit = -1" \
+                    "dcredit = -1" \
+                    "ocredit = -1" \
+                    "retry = 3" \
+                    "difok = 3"; do
+                    key="${item%% =*}"
+                    if grep -qE "^[[:space:]]*#?[[:space:]]*${key}[[:space:]]*=" "$PWQ_CONF"; then
+                        sed -i -E "s|^[[:space:]]*#?[[:space:]]*${key}[[:space:]]*=.*|${item}|" "$PWQ_CONF"
+                    else
+                        echo "$item" >>"$PWQ_CONF"
+                    fi
+                done
+                echo "    已写入 $PWQ_CONF (minlen=$PASS_MIN_LEN, 四类字符各至少 1 个)"
+            else
+                echo "    [!] pam_pwquality 不可用，跳过密码复杂度配置"
+            fi
+        elif grep -q 'pam_cracklib\.so' "$PAM_COMMON_PASSWORD"; then
+            sed -i -E "s|^[[:space:]]*password[[:space:]]+.*pam_cracklib\.so.*$|password    requisite           pam_cracklib.so retry=3 minlen=${PASS_MIN_LEN} ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1 difok=3|" "$PAM_COMMON_PASSWORD" || {
                 echo "修改密码复杂度设置失败"
                 exit 1
             }
+            echo "    已通过 pam_cracklib.so 配置密码复杂度"
+        else
+            echo "    [!] 未识别到密码复杂度模块(pam_pwquality/pam_cracklib)，跳过"
         fi
 
-        # 确保密码哈希设置是幂等的
-        if egrep -q "^password\s.+pam_unix.so\s+.*obscure\s+use_authtok\s+try_first_pass\s+sha512\s+remember=3" $PAM_COMMON_PASSWORD; then
+        # 确保密码哈希算法为 sha512 且记录最近 3 次密码
+        if grep -qE 'pam_unix\.so.*sha512' "$PAM_COMMON_PASSWORD" &&
+            grep -qE 'pam_unix\.so.*remember=3' "$PAM_COMMON_PASSWORD"; then
             echo "密码哈希设置已正确配置，无需修改"
         else
-            sed -i '/^password\s\+.\+pam_unix.so/ s/^password\s\+.\+pam_unix.so\s\+.*$/password    [success=1 default=ignore]      pam_unix.so obscure use_authtok try_first_pass sha512 remember=3/' $PAM_COMMON_PASSWORD || {
+            sed -i -E 's|^[[:space:]]*password[[:space:]]+.*pam_unix\.so.*$|password    [success=1 default=ignore]      pam_unix.so obscure use_authtok try_first_pass sha512 remember=3|' "$PAM_COMMON_PASSWORD" || {
                 echo "修改密码哈希设置失败"
                 exit 1
             }
+            echo "    已更新 pam_unix 哈希算法为 sha512"
         fi
     fi
 
@@ -257,21 +298,24 @@ set_important_permissions() {
     echo "=========== 设置重要文件权限 <函数: set_important_permissions> ==========="
     echo "Setting important file permissions..."
     chmod 755 /etc
-    chmod 777 /tmp
+    chmod 1777 /tmp # 保留 sticky bit，否则任何用户可删除他人文件
     chmod 700 /etc/inetd.conf &>/dev/null
-    chmod 755 /etc/passwd
-    chmod 755 /etc/shadow
+    chmod 644 /etc/passwd
+    chmod 640 /etc/shadow # shadow 必须 640 root:shadow，755 会导致口令哈希全局可读
     chmod 644 /etc/group
+    chmod 640 /etc/gshadow
     chmod 755 /etc/security
     chmod 644 /etc/services
     chmod 750 /etc/rc*.d
     chmod 600 ~/.ssh/authorized_keys &>/dev/null
+    chown root:shadow /etc/shadow /etc/gshadow 2>/dev/null
+    chown root:root /etc/passwd /etc/group 2>/dev/null
     echo "File permissions set."
 
     # 删除潜在威胁文件
-    find / -maxdepth 3 -name hosts.equiv | xargs rm -rf
-    find / -maxdepth 3 -name .netrc | xargs rm -rf
-    find / -maxdepth 3 -name .rhosts | xargs rm -rf
+    find / -maxdepth 3 -name hosts.equiv -exec rm -f {} + 2>/dev/null
+    find / -maxdepth 3 -name .netrc -exec rm -f {} + 2>/dev/null
+    find / -maxdepth 3 -name .rhosts -exec rm -f {} + 2>/dev/null
 }
 
 # 配置SSH安全函数
@@ -283,6 +327,27 @@ configure_ssh_security() {
     SSHD_CONFIG="/etc/ssh/sshd_config" # SSH配置文件路径
 
     cp $SSHD_CONFIG "${SSHD_CONFIG}.bak.${current_time}"
+
+    # 防锁死校验: 同时禁用密码登录与 root 登录前，必须确认存在可用公钥
+    if [ "$PERMIT_PASSWD_LOGIN" = "no" ] && [ "$PERMIT_ROOT_LOGIN" = "no" ]; then
+        key_found="no"
+        check_users="root $(getent group sudo 2>/dev/null | cut -d: -f4 | tr ',' ' ')"
+        for u in $check_users; do
+            home_dir=$(getent passwd "$u" 2>/dev/null | cut -d: -f6)
+            if [ -n "$home_dir" ] && [ -s "$home_dir/.ssh/authorized_keys" ]; then
+                key_found="yes"
+                echo "    检测到已部署公钥的用户: $u"
+                break
+            fi
+        done
+        if [ "$key_found" = "no" ] && [ "${HARDENING_ALLOW_NO_KEY:-0}" != "1" ]; then
+            echo "    [X] 未检测到任何可用 SSH 公钥，而本次配置将禁用密码登录与 root 登录。"
+            echo "        继续执行会导致无法远程登录，已中止 SSH 加固。"
+            echo "        请先部署公钥，或设置 HARDENING_ALLOW_NO_KEY=1 强制继续。"
+            return 1
+        fi
+    fi
+
     # 修改SSH端口
     #!/bin/bash
 
@@ -316,25 +381,36 @@ configure_ssh_security() {
         fi
     done
 
-    # 配置登录失败锁定策略
-    cp /etc/pam.d/common-auth /etc/pam.d/common-auth.bak.${current_time}
-    if grep -q "^auth required pam_faillock.so preauth" /etc/pam.d/common-auth; then
-        sed -i "/^auth required pam_faillock.so preauth/c\auth required pam_faillock.so preauth silent deny=$FAILED_LOGIN_ATTEMPTS unlock_time=$UNLOCK_TIME" /etc/pam.d/common-auth
-    else
-        echo "auth required pam_faillock.so preauth silent deny=$FAILED_LOGIN_ATTEMPTS unlock_time=$UNLOCK_TIME" >>/etc/pam.d/common-auth
-    fi
+    # 配置登录失败锁定策略(pam_faillock)
+    # 幂等做法: 先删除已有的 faillock 规则，再按 PAM 要求的位置重新插入
+    COMMON_AUTH="/etc/pam.d/common-auth"
+    COMMON_ACCOUNT="/etc/pam.d/common-account"
+    cp "$COMMON_AUTH" "${COMMON_AUTH}.bak.${current_time}"
+    cp "$COMMON_ACCOUNT" "${COMMON_ACCOUNT}.bak.${current_time}"
 
-    if grep -q "^auth required pam_faillock.so authfail" /etc/pam.d/common-auth; then
-        sed -i "/^auth required pam_faillock.so authfail/c\auth required pam_faillock.so authfail deny=$FAILED_LOGIN_ATTEMPTS unlock_time=$UNLOCK_TIME" /etc/pam.d/common-auth else
-    else
-        echo "auth required pam_faillock.so authfail deny=$FAILED_LOGIN_ATTEMPTS unlock_time=$UNLOCK_TIME" >>/etc/pam.d/common-auth
-    fi
+    if [ -f /usr/lib/x86_64-linux-gnu/security/pam_faillock.so ] ||
+        [ -f /lib/x86_64-linux-gnu/security/pam_faillock.so ]; then
+        sed -i '/pam_faillock\.so/d' "$COMMON_AUTH" "$COMMON_ACCOUNT"
 
-    if grep -q "^account required pam_faillock.so" /etc/pam.d/common-account; then
-        cp /etc/pam.d/common-account /etc/pam.d/common-account.bak.${current_time}
-        sed -i '/^account required pam_faillock.so/c\account required pam_faillock.so' $SSHD_CONFIG
+        # preauth 必须在 pam_unix 之前，authfail 紧跟其后
+        auth_line=$(grep -nE '^auth[[:space:]].*pam_unix\.so' "$COMMON_AUTH" | head -n 1 | cut -d: -f1)
+        if [ -n "$auth_line" ]; then
+            sed -i "${auth_line}i auth    required            pam_faillock.so preauth silent deny=${FAILED_LOGIN_ATTEMPTS} unlock_time=${UNLOCK_TIME}" "$COMMON_AUTH"
+            sed -i "$((auth_line + 1))a auth    [default=die]       pam_faillock.so authfail deny=${FAILED_LOGIN_ATTEMPTS} unlock_time=${UNLOCK_TIME}" "$COMMON_AUTH"
+            echo "    [+] 已写入 pam_faillock 认证规则(deny=$FAILED_LOGIN_ATTEMPTS, unlock_time=${UNLOCK_TIME}s)"
+        else
+            echo "    [!] common-auth 中未找到 pam_unix 认证行，跳过 faillock 配置"
+        fi
+
+        # account 段规则必须写入 common-account，而不是 sshd_config
+        account_line=$(grep -nE '^account[[:space:]].*pam_unix\.so' "$COMMON_ACCOUNT" | head -n 1 | cut -d: -f1)
+        if [ -n "$account_line" ]; then
+            sed -i "${account_line}i account required            pam_faillock.so" "$COMMON_ACCOUNT"
+        else
+            echo "account required            pam_faillock.so" >>"$COMMON_ACCOUNT"
+        fi
     else
-        echo "account required pam_faillock.so" >>/etc/pam.d/common-account
+        echo "    [!] 未找到 pam_faillock.so，跳过登录失败锁定配置"
     fi
 
     # 配置allow \ deny 列表
@@ -641,10 +717,24 @@ other_hardening() {
 restart_services() {
     echo ""
     echo "=========== 重启服务 <函数: restart_services> ==========="
-    echo "重启SSH服务..."
-    # 重启SSH服务
-    systemctl restart ssh >/dev/null 2>&1 || service ssh restart >/dev/null 2>&1
 
+    # 重启前校验 sshd 配置，配置非法时重启会直接导致无法登录
+    if command -v sshd &>/dev/null; then
+        if ! sshd -t 2>/dev/null; then
+            echo "    [X] sshd 配置校验失败，已跳过 SSH 重启。请先执行 sshd -t 排查:"
+            sshd -t 2>&1 | sed 's/^/        /'
+            return 1
+        fi
+        echo "    [+] sshd 配置校验通过"
+    fi
+
+    echo "重启SSH服务..."
+    if systemctl restart ssh >/dev/null 2>&1 || service ssh restart >/dev/null 2>&1; then
+        echo "    [+] SSH 服务已重启"
+    else
+        echo "    [!] SSH 服务重启失败，请手工检查: systemctl status ssh"
+        return 1
+    fi
 }
 
 main

@@ -65,7 +65,7 @@ MAIN_MENU() {
         12) echo "" && STORAGE_MGMT ;;
         13) echo "" && OPS_SSH_KEY_MGMT ;;
         14) echo "" && SECURITY_AUDIT ;;
-        15) echo "" && BACKUP_RESTORE ;;
+        15) echo "" && BACKUP_MGMT ;;
         16) echo "" && CRON_MGMT ;;
         17) echo "" && K8S_MGMT ;;
         99 | bash) echo "" && sudo bash ;;
@@ -7625,6 +7625,175 @@ SECURITY_AUDIT() {
         echo
     done
 }
+
+# 显示安全日志
+display_security_logs() {
+    local auth_log="" source_name="" fail_count=0
+    for candidate in /var/log/auth.log /var/log/secure; do
+        if [ -r "$candidate" ]; then
+            auth_log="$candidate"
+            break
+        fi
+    done
+
+    BLUE_echo "------------------------------------------------------"
+    if [ -n "$auth_log" ]; then
+        source_name="$auth_log"
+        GREEN_echo "日志来源: $auth_log"
+        fail_count=$(grep -icE "Failed password|Invalid user|authentication failure" "$auth_log" 2>/dev/null)
+        echo ""
+        echo ">>> SSH 登录失败记录(最近 20 条)"
+        grep -iE "Failed password|Invalid user|authentication failure" "$auth_log" 2>/dev/null | tail -n 20 ||
+            echo "    无失败记录"
+        echo ""
+        echo ">>> 成功登录记录(最近 10 条)"
+        grep -iE "Accepted (password|publickey)" "$auth_log" 2>/dev/null | tail -n 10 ||
+            echo "    无成功记录"
+        echo ""
+        echo ">>> 提权操作记录(最近 10 条)"
+        grep -iE "sudo:.*COMMAND=" "$auth_log" 2>/dev/null | tail -n 10 ||
+            echo "    无提权记录"
+    elif command -v journalctl &>/dev/null; then
+        source_name="journalctl -u ssh"
+        GREEN_echo "日志来源: journalctl -u ssh"
+        echo ""
+        echo ">>> SSH 登录失败记录(最近 20 条)"
+        journalctl -u ssh --no-pager -n 500 2>/dev/null |
+            grep -iE "Failed password|Invalid user|authentication failure" | tail -n 20 ||
+            echo "    无失败记录"
+        echo ""
+        echo ">>> 成功登录记录(最近 10 条)"
+        journalctl -u ssh --no-pager -n 500 2>/dev/null |
+            grep -iE "Accepted (password|publickey)" | tail -n 10 ||
+            echo "    无成功记录"
+    else
+        RED_echo "未找到可读的认证日志(auth.log/secure/journalctl 均不可用)"
+        return 1
+    fi
+
+    BLUE_echo "------------------------------------------------------"
+    GREEN_echo "统计: 登录失败累计 $fail_count 条 (来源: $source_name)"
+    echo "提示: 失败次数持续增长时, 请检查 /etc/hosts.allow 白名单与 pam_faillock 策略"
+    return 0
+}
+
+# 扫描系统漏洞(基线检查, 不联网、不修改系统)
+scan_system_vulnerabilities() {
+    local issue=0
+    BLUE_echo "------------------------------------------------------"
+    GREEN_echo "开始系统基线检查..."
+
+    # 1. 空密码账户
+    echo ""
+    echo ">>> 空密码账户检查"
+    local empty_pass
+    empty_pass=$(awk -F: '($2==""){print $1}' /etc/shadow 2>/dev/null)
+    if [ -n "$empty_pass" ]; then
+        RED_echo "    发现空密码账户: $(echo "$empty_pass" | tr '\n' ' ')"
+        issue=$((issue + 1))
+    else
+        echo "    [通过] 无空密码账户"
+    fi
+
+    # 2. UID 0 账户
+    echo ""
+    echo ">>> UID 0 账户检查(应只有 root)"
+    local uid0
+    uid0=$(awk -F: '($3==0){print $1}' /etc/passwd 2>/dev/null | tr '\n' ' ')
+    if [ "$(echo "$uid0" | wc -w)" -gt 1 ]; then
+        RED_echo "    发现多个 UID 0 账户: $uid0"
+        issue=$((issue + 1))
+    else
+        echo "    [通过] 仅 root 拥有 UID 0"
+    fi
+
+    # 3. 全局可写且无 sticky 的目录
+    echo ""
+    echo ">>> 全局可写目录检查(应带 sticky 位)"
+    local ww_dirs
+    ww_dirs=$(find / -xdev -maxdepth 3 -type d -perm -0002 ! -perm -1000 2>/dev/null | head -n 10)
+    if [ -n "$ww_dirs" ]; then
+        RED_echo "    存在无 sticky 位的全局可写目录:"
+        echo "$ww_dirs" | sed 's/^/      /'
+        issue=$((issue + 1))
+    else
+        echo "    [通过] 未发现异常全局可写目录"
+    fi
+
+    # 4. 关键文件权限
+    echo ""
+    echo ">>> 关键文件权限检查"
+    local perm_fail=0
+    local entry
+    for entry in "/etc/passwd:644" "/etc/shadow:640" "/etc/group:644" "/etc/gshadow:640"; do
+        local file="${entry%%:*}"
+        local want="${entry##*:}"
+        [ -e "$file" ] || continue
+        local got
+        got=$(stat -c '%a' "$file" 2>/dev/null)
+        if [ "$got" != "$want" ]; then
+            RED_echo "    $file 权限为 $got (建议 $want)"
+            perm_fail=1
+        fi
+    done
+    if [ $perm_fail -eq 0 ]; then
+        echo "    [通过] 关键文件权限正常"
+    else
+        issue=$((issue + 1))
+    fi
+
+    # 5. 防火墙状态
+    echo ""
+    echo ">>> 防火墙状态"
+    if command -v ufw &>/dev/null; then
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            echo "    [通过] ufw 已启用"
+        else
+            YELLOW_echo "    ufw 未启用"
+            issue=$((issue + 1))
+        fi
+    else
+        YELLOW_echo "    未安装 ufw"
+    fi
+
+    # 6. 待安装的安全更新
+    echo ""
+    echo ">>> 安全更新检查"
+    if command -v apt-get &>/dev/null; then
+        local sec_count
+        sec_count=$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null |
+            grep -c "^Inst.*security")
+        if [ "${sec_count:-0}" -gt 0 ]; then
+            YELLOW_echo "    存在 $sec_count 个待安装的安全更新"
+            issue=$((issue + 1))
+        else
+            echo "    [通过] 无待安装的安全更新(或索引未刷新)"
+        fi
+    fi
+
+    # 7. SSH 关键配置
+    echo ""
+    echo ">>> SSH 关键配置检查"
+    if [ -r /etc/ssh/sshd_config ]; then
+        local key value
+        for key in PermitRootLogin PasswordAuthentication PermitEmptyPasswords; do
+            value=$(sshd -T 2>/dev/null | awk -v k="$key" 'tolower($1)==tolower(k){print $2}' | head -n1)
+            [ -n "$value" ] || value=$(grep -iE "^\s*${key}\s" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -n1)
+            echo "    ${key}: ${value:-未显式配置}"
+        done
+    else
+        YELLOW_echo "    未找到 /etc/ssh/sshd_config"
+    fi
+
+    BLUE_echo "------------------------------------------------------"
+    if [ $issue -eq 0 ]; then
+        GREEN_echo "基线检查完成: 未发现明显风险项"
+    else
+        YELLOW_echo "基线检查完成: 共发现 $issue 类风险项, 请逐项确认"
+    fi
+    echo "说明: 本检查为本地基线核对, 不替代漏洞扫描器与补丁管理平台"
+    return 0
+}
 # endregion
 
 #region 15) 备份管理
@@ -7643,6 +7812,165 @@ BACKUP_MGMT() {
         esac
         echo
     done
+}
+
+# 备份根目录(可通过环境变量覆盖)
+BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/os-tools}"
+
+# 创建备份
+create_backup() {
+    local -a target_paths=()
+    local p archive base_name rel size snap_list
+    BLUE_echo "------------------------------------------------------"
+    GREEN_echo "备份目录: $BACKUP_ROOT"
+    echo "可输入多个路径, 空格分隔; 直接回车则使用默认: /etc"
+    read -p "要备份的路径: " -a target_paths
+    if [ ${#target_paths[@]} -eq 0 ]; then
+        target_paths=("/etc")
+    fi
+
+    for p in "${target_paths[@]}"; do
+        if [ ! -e "$p" ]; then
+            RED_echo "路径不存在: $p"
+            return 1
+        fi
+    done
+
+    mkdir -p "$BACKUP_ROOT" || {
+        RED_echo "无法创建备份目录: $BACKUP_ROOT"
+        return 1
+    }
+    chmod 700 "$BACKUP_ROOT" 2>/dev/null
+
+    base_name="backup_$(date +%Y%m%d-%H%M%S).tar.gz"
+    archive="$BACKUP_ROOT/$base_name"
+
+    GREEN_echo "开始打包: ${target_paths[*]}"
+    # 统一去掉前导 /, 以 -C / 的方式打包, 恢复时可直接 -C / 解包
+    local -a rel_paths=()
+    for p in "${target_paths[@]}"; do
+        rel="${p#/}"
+        # 传入 "/" 时按整机打包处理
+        [ -z "$rel" ] && rel="."
+        rel_paths+=("$rel")
+    done
+
+    if ! tar czf "$archive" -C / "${rel_paths[@]}" 2>/dev/null; then
+        RED_echo "打包失败, 已删除不完整归档"
+        rm -f "$archive"
+        return 1
+    fi
+
+    # 校验归档可读且非空
+    if ! tar tzf "$archive" >/dev/null 2>&1 || [ -z "$(tar tzf "$archive" 2>/dev/null | head -n 1)" ]; then
+        RED_echo "归档校验失败: $archive"
+        rm -f "$archive"
+        return 1
+    fi
+
+    chmod 600 "$archive" 2>/dev/null
+    size=$(du -h "$archive" | awk '{print $1}')
+    printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$archive" \
+        "${rel_paths[*]}" "$size" >>"$BACKUP_ROOT/index.tsv"
+
+    GREEN_echo "备份完成: $archive ($size)"
+    echo "条目数量: $(tar tzf "$archive" 2>/dev/null | wc -l)"
+    echo "恢复命令: tar xzf $archive -C / -p"
+    return 0
+}
+
+# 恢复备份
+restore_backup() {
+    local -a archives=()
+    local archive choice
+    BLUE_echo "------------------------------------------------------"
+    mkdir -p "$BACKUP_ROOT" 2>/dev/null
+    while IFS= read -r line; do
+        [ -n "$line" ] && archives+=("$line")
+    done < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'backup_*.tar.gz' 2>/dev/null | sort)
+
+    if [ ${#archives[@]} -eq 0 ]; then
+        YELLOW_echo "未找到备份文件(目录: $BACKUP_ROOT)"
+        return 1
+    fi
+
+    GREEN_echo "可用备份列表:"
+    local i=1
+    for archive in "${archives[@]}"; do
+        echo "  $i) $(basename "$archive")  $(du -h "$archive" 2>/dev/null | awk '{print $1}')"
+        i=$((i + 1))
+    done
+    echo "  0) 返回"
+
+    read -p "请选择要恢复的备份编号: " choice
+    case "$choice" in
+    0 | "") return 0 ;;
+    *[!0-9]*)
+        RED_echo "无效编号: $choice"
+        return 1
+        ;;
+    esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt ${#archives[@]} ]; then
+        RED_echo "编号超出范围: $choice"
+        return 1
+    fi
+    archive="${archives[$((choice - 1))]}"
+
+    if ! tar tzf "$archive" >/dev/null 2>&1; then
+        RED_echo "归档损坏, 无法恢复: $archive"
+        return 1
+    fi
+
+    echo ""
+    GREEN_echo "归档内容(前 20 条):"
+    tar tzf "$archive" 2>/dev/null | head -n 20 | sed 's/^/    /'
+
+    # 收集归档涉及的一级目录, 用于恢复前快照
+    local -a tops=()
+    local line top
+    while IFS= read -r line; do
+        top="${line%%/*}"
+        [ -z "$top" ] && continue
+        case " ${tops[*]} " in
+        *" $top "*) ;;
+        *) tops+=("$top") ;;
+        esac
+    done < <(tar tzf "$archive" 2>/dev/null)
+
+    echo ""
+    YELLOW_echo "警告: 恢复会覆盖现有文件, 涉及: ${tops[*]}"
+    read -p "确认恢复请输入 RESTORE (其它任意输入取消): " choice
+    if [ "$choice" != "RESTORE" ]; then
+        YELLOW_echo "已取消恢复"
+        return 0
+    fi
+
+    # 恢复前快照
+    local -a existing=()
+    for top in "${tops[@]}"; do
+        [ -e "/$top" ] && existing+=("$top")
+    done
+    if [ ${#existing[@]} -gt 0 ]; then
+        local snapshot="$BACKUP_ROOT/pre-restore_$(date +%Y%m%d-%H%M%S).tar.gz"
+        if tar czf "$snapshot" -C / "${existing[@]}" 2>/dev/null; then
+            GREEN_echo "已生成恢复前快照: $snapshot"
+        else
+            RED_echo "恢复前快照失败, 已中止恢复"
+            rm -f "$snapshot"
+            return 1
+        fi
+    fi
+
+    GREEN_echo "开始恢复: $(basename "$archive")"
+    if tar xzf "$archive" -C / -p --numeric-owner 2>/dev/null; then
+        GREEN_echo "恢复完成"
+        echo "已恢复到: ${tops[*]}"
+        echo "提示: 涉及 /etc 配置变更时, 请复核服务状态后再重启"
+    else
+        RED_echo "恢复失败, 请检查磁盘空间与归档完整性"
+        return 1
+    fi
+    return 0
 }
 # endregion
 
@@ -8474,7 +8802,7 @@ K8S_MGMT() {
         8) k8s_cm_mgmt ;;
         9) k8s_secret_mgmt ;;
         10) k8s_rbac_mgmt ;;
-        11) k8s_config_limits_mgmt ;;
+        11) k8s_resource_limits_mgmt ;;
         12) k8s_resource_config_apply ;;
         13) k8s_image_operations ;;
         14) k8s_svc_mgmt ;;
@@ -10888,16 +11216,23 @@ _k8s_cluster_restore() {
 #region pre
 color_echo() {
     local now_current_time=$(date "+%Y-%m-%d %H:%M:%S")
-    local color=$(tput setaf "$2") # Second parameter is color code
-    local reset=$(tput sgr0)
+    local color="" reset=""
+    # 非交互终端或 TERM=dumb 时 tput 会报错，此处降级为无颜色输出
+    if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ -n "${TERM:-}" ] && [ "${TERM}" != "dumb" ]; then
+        color=$(tput setaf "$2" 2>/dev/null) || color=""
+        reset=$(tput sgr0 2>/dev/null) || reset=""
+    fi
     echo -e "${now_current_time} || ${color}$1${reset}" # First parameter is message
     #sleep 1
 }
 
 color_echo_notime() {
     local now_current_time=$(date "+%Y-%m-%d %H:%M:%S")
-    local color=$(tput setaf "$2") # Second parameter is color code
-    local reset=$(tput sgr0)
+    local color="" reset=""
+    if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ -n "${TERM:-}" ] && [ "${TERM}" != "dumb" ]; then
+        color=$(tput setaf "$2" 2>/dev/null) || color=""
+        reset=$(tput sgr0 2>/dev/null) || reset=""
+    fi
     echo -e "${color}$1${reset}" # First parameter is message
     #sleep 1
 }

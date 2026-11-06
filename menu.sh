@@ -16,6 +16,8 @@ readonly APP_NAME="dsh-os-tools"
 readonly APP_VERSION="1.2.0"
 readonly DEFAULT_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dsh-os-tools"
 readonly DEFAULT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dsh-os-tools"
+# 每个 OS 版本目录下的参数中间脚本，负责参数声明、采集与校验
+readonly RUNNER_FILE="run.sh"
 
 INSTALL_DIR="${DSH_TOOLS_HOME:-$DEFAULT_INSTALL_DIR}"
 CONFIG_DIR="${DSH_TOOLS_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
@@ -80,13 +82,18 @@ $APP_NAME $APP_VERSION
   --base-url URL      版本化静态文件目录
   --profile ID        OS 配置编号，例如 ubuntu-24.04
   --run N             运行指定 OS 菜单中的脚本编号 N
-  --install-profile   下载并安装指定 OS 配置下的全部脚本
+  --install-profile   下载并安装指定 OS 配置下的全部脚本（需配合 --profile）
   --install-launcher  安装 dsh-tools 启动命令
   --list              列出 OS 配置及脚本
   --set-base-url URL  保存下载站点地址
   --show-base-url     显示当前下载站点地址
   --help              显示帮助
   --version           显示版本
+
+脚本参数：
+  各原子脚本需要的位置参数，由对应 OS 版本目录下的 run.sh 统一声明、采集与校验。
+  交互模式下运行前会逐项提示；非交互模式（--run N 后接参数）缺少必填参数会直接失败。
+  查看参数说明：bash scripts/<os>/<version>/run.sh --describe <脚本名>
 
 环境变量：
   DSH_TOOLS_BASE_URL  下载站点地址
@@ -228,6 +235,17 @@ ensure_layout() {
     mkdir -p -- "$INSTALL_DIR" "$SCRIPT_DIR"
 }
 
+# 判断数组是否已包含指定元素(不依赖 IFS)
+array_contains() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
 ensure_work_dir() {
     if [[ -z "$WORK_DIR" || ! -d "$WORK_DIR" ]]; then
         WORK_DIR="$(mktemp -d)"
@@ -326,7 +344,7 @@ load_catalog_file() {
         IFS='|' read -r profile_id _ _ _ _ _ _ _ _ _ _ _ <<<"$line"
         [[ -n "$profile_id" ]] || fail "目录中存在无效行：$line"
         CATALOG_ROWS+=("$line")
-        if [[ " ${PROFILE_IDS[*]} " != *" $profile_id "* ]]; then
+        if ! array_contains "$profile_id" ${PROFILE_IDS[@]+"${PROFILE_IDS[@]}"}; then
             PROFILE_IDS+=("$profile_id")
         fi
     done <"$path"
@@ -472,7 +490,11 @@ list_scripts() {
     for line in "${CATALOG_ROWS[@]}"; do
         IFS='|' read -r id family version path profile_name script_id file script_title desc risk root args <<<"$line"
         [[ "$id" == "$wanted" ]] || continue
-        printf '%-5s %-24s %-20s %s\n' "$script_id" "$file" "$script_title" "$desc"
+        case "$args" in
+        prompt) printf '%-5s %-24s %-20s [需参数] %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
+        passthrough) printf '%-5s %-24s %-20s [可带参] %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
+        *) printf '%-5s %-24s %-20s %s\n' "$script_id" "$file" "$script_title" "$desc" ;;
+        esac
     done
     printf '%s%s%s\n' "$BLUE" \
         "--------------------------------------------------------------------------------" "$RESET"
@@ -560,37 +582,78 @@ confirm_run() {
     [[ "$answer" =~ ^[Yy]$ ]]
 }
 
-collect_init_os_args() {
-    local hostname_value ip_address dns_server
-    if [[ $# -gt 0 ]]; then
-        printf '%s\n' "$@"
+# 查找可用的参数中间脚本(源码目录或已安装目录)
+find_local_runner() {
+    local os_path="$1"
+    local source_runner="$SOURCE_DIR/scripts/$os_path/$RUNNER_FILE"
+    local installed_runner="$SCRIPT_DIR/$os_path/$RUNNER_FILE"
+
+    if is_local_bundle && [[ -f "$source_runner" ]]; then
+        printf '%s' "$source_runner"
         return 0
     fi
-    [[ -t 0 ]] || fail "init-os.sh 需要参数：hostname ip dns"
-    read -r -p "主机名: " hostname_value
-    read -r -p "静态 IP/前缀，例如 192.168.1.20/24: " ip_address
-    read -r -p "DNS 地址，留空则使用网关: " dns_server
-    [[ -n "$hostname_value" && -n "$ip_address" ]] ||
-        fail "主机名和 IP 不能为空"
-    printf '%s\n%s\n%s\n' "$hostname_value" "$ip_address" "$dns_server"
+
+    if [[ -f "$installed_runner" ]]; then
+        if [[ -f "$INSTALLED_MANIFEST" ]] &&
+            verify_file "$installed_runner" "scripts/$os_path/$RUNNER_FILE" "$INSTALLED_MANIFEST"; then
+            printf '%s' "$installed_runner"
+            return 0
+        fi
+        warn "本地参数中间脚本校验失败或缺少清单，将重新下载：$RUNNER_FILE"
+    fi
+    return 1
+}
+
+# 获取参数中间脚本，缺失时尝试下载；失败返回 1，由调用方降级为直接透传
+ensure_runner() {
+    local os_path="$1"
+    local relative_path="scripts/$os_path/$RUNNER_FILE"
+    local destination="$SCRIPT_DIR/$os_path/$RUNNER_FILE"
+    local tmp_file
+
+    if find_local_runner "$os_path"; then
+        return 0
+    fi
+
+    [[ -n "$BASE_URL" ]] || return 1
+    load_remote_manifest 2>/dev/null || return 1
+    ensure_work_dir
+
+    tmp_file="$WORK_DIR/$RUNNER_FILE"
+    download_raw "$relative_path" "$tmp_file" 2>/dev/null || return 1
+    verify_file "$tmp_file" "$relative_path" "$REMOTE_MANIFEST" 2>/dev/null || return 1
+    syntax_check "$tmp_file" 2>/dev/null || return 1
+
+    mkdir -p -- "$(dirname -- "$destination")"
+    copy_with_mode 0755 "$tmp_file" "$destination"
+    printf '%s' "$destination"
+}
+
+# 调用参数中间脚本采集参数；输出写入文件，避免进程替换吞掉退出码
+collect_script_args() {
+    local runner="$1"
+    local script_file="$2"
+    local args_file="$3"
+    local runner_bin
+    shift 3
+
+    runner_bin="$(bash_binary)" || fail "找不到 Bash，无法执行参数中间脚本"
+    : >"$args_file"
+    if ! "$runner_bin" "$runner" --collect "$script_file" "$@" >"$args_file"; then
+        fail "参数准备失败：$script_file"
+    fi
 }
 
 run_tool() {
     local wanted_profile="$1"
     local script_id="$2"
     shift 2
-    local entry script_path
+    local entry script_path runner_path args_file bash_runner
     local -a script_args=()
 
     entry="$(get_script_entry "$wanted_profile" "$script_id")" ||
         fail "OS 配置 $wanted_profile 中不存在脚本编号：$script_id"
     parse_script_entry "$entry"
-
-    if [[ "$ENTRY_ARG_MODE" == "init_os" ]]; then
-        mapfile -t script_args < <(collect_init_os_args "$@")
-    else
-        script_args=("$@")
-    fi
 
     script_path="$(ensure_script "$ENTRY_PROFILE" "$ENTRY_OS_PATH" "$ENTRY_FILE")"
     confirm_run "$ENTRY_TITLE" "$ENTRY_RISK" || {
@@ -598,20 +661,31 @@ run_tool() {
         return 0
     }
 
+    # 参数中间层：由该 OS 版本的 run.sh 统一声明、采集并校验参数
+    if runner_path="$(ensure_runner "$ENTRY_OS_PATH")"; then
+        ensure_work_dir
+        args_file="$WORK_DIR/${ENTRY_FILE}.args"
+        collect_script_args "$runner_path" "$ENTRY_FILE" "$args_file" "$@"
+        mapfile -t script_args <"$args_file"
+    else
+        warn "未找到参数中间脚本 $RUNNER_FILE，按原始参数直接执行"
+        script_args=("$@")
+    fi
+
     info "运行：$script_path"
-    local bash_runner
     bash_runner="$(bash_binary)" || fail "找不到 Bash，无法运行脚本"
     if [[ "$ENTRY_ROOT" == "yes" && "$EUID" -ne 0 ]]; then
         require_command sudo
-        sudo -- "$bash_runner" "$script_path" "${script_args[@]}"
+        sudo -- "$bash_runner" "$script_path" ${script_args[@]+"${script_args[@]}"}
     else
-        "$bash_runner" "$script_path" "${script_args[@]}"
+        "$bash_runner" "$script_path" ${script_args[@]+"${script_args[@]}"}
     fi
 }
 
 install_profile_from_source() {
     local wanted_profile="$1"
-    local line id os_path file count=0
+    local line id os_path file count=0 one_path runner
+    local -a os_paths=()
     for line in "${CATALOG_ROWS[@]}"; do
         IFS='|' read -r id _ _ os_path _ _ file _ _ _ _ _ <<<"$line"
         [[ "$id" == "$wanted_profile" ]] || continue
@@ -622,8 +696,21 @@ install_profile_from_source() {
         mkdir -p -- "$SCRIPT_DIR/$os_path"
         copy_with_mode 0755 "$SOURCE_DIR/scripts/$os_path/$file" \
             "$SCRIPT_DIR/$os_path/$file"
+        array_contains "$os_path" ${os_paths[@]+"${os_paths[@]}"} || os_paths+=("$os_path")
         ((count += 1))
     done
+
+    # 一并安装该 OS 版本的参数中间脚本
+    for one_path in ${os_paths[@]+"${os_paths[@]}"}; do
+        runner="$SOURCE_DIR/scripts/$one_path/$RUNNER_FILE"
+        if [[ -f "$runner" ]]; then
+            syntax_check "$runner" || fail "语法检查失败：scripts/$one_path/$RUNNER_FILE"
+            copy_with_mode 0755 "$runner" "$SCRIPT_DIR/$one_path/$RUNNER_FILE"
+        else
+            warn "源码中缺少参数中间脚本：scripts/$one_path/$RUNNER_FILE"
+        fi
+    done
+
     copy_with_mode 0755 "$SOURCE_DIR/menu.sh" "$INSTALL_DIR/menu.sh"
     copy_with_mode 0644 "$SOURCE_DIR/catalog.tsv" "$INSTALLED_CATALOG"
     (
@@ -635,8 +722,9 @@ install_profile_from_source() {
 
 install_profile_from_remote() {
     local wanted_profile="$1"
-    local line id os_path file relative_path count=0
+    local line id os_path file relative_path runner_relative one_path count=0
     local stage_dir
+    local -a os_paths=()
 
     [[ -n "$BASE_URL" ]] || resolve_base_url
     load_remote_manifest || fail "无法获取 SHA256SUMS"
@@ -664,6 +752,20 @@ install_profile_from_remote() {
             fail "校验失败：$relative_path"
         syntax_check "$stage_dir/$relative_path" ||
             fail "语法检查失败：$relative_path"
+
+        # 每个 OS 版本只下载一次参数中间脚本
+        if ! array_contains "$os_path" ${os_paths[@]+"${os_paths[@]}"}; then
+            os_paths+=("$os_path")
+            runner_relative="scripts/$os_path/$RUNNER_FILE"
+            if download_raw "$runner_relative" "$stage_dir/$runner_relative" 2>/dev/null &&
+                verify_file "$stage_dir/$runner_relative" "$runner_relative" "$REMOTE_MANIFEST" 2>/dev/null &&
+                syntax_check "$stage_dir/$runner_relative" 2>/dev/null; then
+                :
+            else
+                warn "远端缺少或校验失败的参数中间脚本：$runner_relative"
+                rm -f -- "$stage_dir/$runner_relative"
+            fi
+        fi
         ((count += 1))
     done
 
@@ -678,6 +780,16 @@ install_profile_from_remote() {
         copy_with_mode 0755 "$stage_dir/scripts/$os_path/$file" \
             "$SCRIPT_DIR/$os_path/$file"
     done
+
+    # 安装参数中间脚本
+    for one_path in ${os_paths[@]+"${os_paths[@]}"}; do
+        if [[ -f "$stage_dir/scripts/$one_path/$RUNNER_FILE" ]]; then
+            mkdir -p -- "$SCRIPT_DIR/$one_path"
+            copy_with_mode 0755 "$stage_dir/scripts/$one_path/$RUNNER_FILE" \
+                "$SCRIPT_DIR/$one_path/$RUNNER_FILE"
+        fi
+    done
+
     success "已安装 $count 个脚本：$wanted_profile"
 }
 
@@ -910,11 +1022,7 @@ main() {
     fi
     if [[ -n "$run_id" ]]; then
         [[ -n "$requested_profile" ]] || fail "--run 需要同时指定 --profile"
-        if [[ "$run_id" == "1" && ${#run_args[@]} -eq 0 ]] &&
-            get_script_entry "$requested_profile" "$run_id" | grep -q '|init_os$'; then
-            mapfile -t run_args < <(collect_init_os_args)
-        fi
-        run_tool "$requested_profile" "$run_id" "${run_args[@]}"
+        run_tool "$requested_profile" "$run_id" ${run_args[@]+"${run_args[@]}"}
         return 0
     fi
 

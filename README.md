@@ -13,6 +13,7 @@
 └── scripts/
     └── ubuntu/
         └── 24.04/
+            ├── run.sh
             ├── init-os.sh
             ├── init_docker.sh
             ├── init_llm.sh
@@ -27,6 +28,8 @@
 ```text
 scripts/<os>/<version>/<script>.sh
 ```
+
+每个版本目录下还有一个参数中间脚本 `run.sh`，用于声明该版本原子脚本的参数契约（见下文「参数中间脚本」）。它不列入 `catalog.tsv`，不出现在菜单的脚本列表中。
 
 以后增加其他系统时，直接增加版本目录：
 
@@ -51,11 +54,12 @@ bash menu.sh
 
 1. 主菜单选择操作系统及版本。
 2. 二级菜单通过编号选择脚本。
-3. 仅在选中脚本后下载对应文件。
+3. 仅在选中脚本后下载对应文件（含该版本的 `run.sh`）。
 4. 下载文件必须通过 `SHA256SUMS` 和 `bash -n` 检查。
 5. 已安装且校验通过的脚本会直接复用。
+6. 脚本所需参数由 `run.sh` 采集与校验，通过后才执行。
 
-二级菜单中的 `96` 可以安装当前 OS 配置下的全部脚本。默认单脚本模式不会预下载其他脚本。
+二级菜单中的 `96` 可以安装当前 OS 配置下的全部脚本（包含 `run.sh`）。默认单脚本模式不会预下载其他脚本。
 
 ## GitHub Raw 使用
 
@@ -130,12 +134,51 @@ bash /tmp/dsh-menu.sh --set-base-url "$BASE_URL"
 sha256sum menu.sh catalog.tsv README.md scripts/*/*/*.sh > SHA256SUMS
 ```
 
-GitHub Actions 会检查 Shell 语法、目录引用以及 `SHA256SUMS` 是否与当前文件一致。
+`scripts/*/*/*.sh` 已包含各版本的 `run.sh`，无需单独处理。
+
+仓库通过 `.gitattributes` 强制所有文本文件使用 LF 行尾。本仓库在 Windows 上维护、在 Linux 上执行，若检出为 CRLF，`bash` 会因 shebang 失败而无法运行脚本，且 `SHA256SUMS` 校验也会不一致。
+
+GitHub Actions 会检查 Shell 语法、`catalog.tsv` 引用、各版本 `run.sh` 的参数覆盖，以及 `SHA256SUMS` 是否与当前文件一致。
+
+## 参数中间脚本
+
+原子脚本中只有 `init-os.sh` 需要位置参数；其余脚本无位置参数，或按自身语法接收参数（`mgt-god.sh` 为 `函数名 [参数...]`，`opt.sh` 为 `-h/-a` 选项）。
+
+为了把「参数知识」放在与脚本相同的 OS 版本目录内，而不是硬编码进 `menu.sh`，每个版本目录提供一个 `run.sh`：
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --list
+bash scripts/ubuntu/24.04/run.sh --describe init-os.sh
+bash scripts/ubuntu/24.04/run.sh --collect init-os.sh node01 192.168.1.20/24 223.5.5.5
+```
+
+`--collect` 校验参数后按「每行一个」输出，供调用方 `mapfile` 读取。退出码约定：
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 成功 |
+| 2 | 用法错误或脚本不存在 |
+| 3 | 缺少必填参数 |
+| 4 | 参数校验失败 |
+
+`menu.sh` 只负责下载、校验、提权与执行；参数声明、交互提示和格式校验全部委托给 `run.sh`。由于输出写入临时文件而不是进程替换，参数采集失败会正常中断，不会以空参数继续执行。
+
+当前 `ubuntu/24.04` 的参数契约：
+
+| 脚本 | 参数 | 说明 |
+| --- | --- | --- |
+| `init-os.sh` | `hostname`（必填）、`ip_prefix`（可选）、`dns`（可选） | 主机名需符合 RFC 1123；`ip_prefix` 形如 `192.168.1.20/24`，留空沿用当前地址；`dns` 留空使用网关 |
+| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` / `hardening-os.sh` | 无 | 配置项在脚本头部或环境变量中 |
+| `mgt-god.sh` | 原样透传 | `函数名 [参数...]`，无参进入交互菜单 |
+| `opt.sh` | 原样透传 | `-h` / `-a` 示例选项 |
+
+新增 OS 版本时，除了放脚本和登记 `catalog.tsv`，还需提供该版本目录下的 `run.sh`；缺失时 `menu.sh` 会降级为「原始参数直接透传」并给出警告。
 
 ## 安全提示
 
 - 公开仓库中的脚本会修改服务器、网络、SSH、Docker 或 Kubernetes。执行前应审查具体脚本及风险说明。
-- `hardening-os.sh` 当前存在严重问题：会把 `/etc/shadow` 设置为 `755`、移除 `/tmp` 的 sticky bit，并可能造成 SSH 登录锁定。生产使用前必须修复。
+- `hardening-os.sh` 会修改 SSH、PAM 与关键文件权限。脚本已内置两项防锁死措施：关闭密码登录前会检查 root 或 sudo 组用户是否存在 `authorized_keys`，不满足则中止（可用 `HARDENING_ALLOW_NO_KEY=1` 强制）；重启 SSH 前会执行 `sshd -t` 校验配置。即便如此，仍建议先在测试机验证。
+- 此前版本中 `/etc/shadow` 被设为 `755`、`/tmp` 丢失 sticky bit、`common-account` 规则被误写入 `sshd_config` 等问题已修复。
 - `mgt-god.sh` 包含删除、清空、Docker prune、Kubernetes 删除类操作，应以 root 权限严格审核运行。
 - `init_llm.sh` 会把 Ollama 的 `11434/TCP` 对外开放，建议增加认证、反向代理、网络 ACL 或限制来源。
 - GitHub Raw 和 SHA-256 校验可以保证文件一致性，但仓库维护者账号仍需启用强认证；重要环境应固定 commit SHA，而不是始终使用 `main`。

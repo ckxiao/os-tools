@@ -36,6 +36,24 @@ jobs:
             }
           done < catalog.tsv
 
+      - name: Check parameter runner coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r profile_id _family _version os_path _title \
+            script_id file _script_title _description _risk _root _mode; do
+            [[ -z "${profile_id//[[:space:]]/}" || "$profile_id" == \#* ]] && continue
+            runner="scripts/$os_path/run.sh"
+            [[ -f "$runner" ]] || {
+              echo "missing parameter runner: $runner"
+              exit 1
+            }
+            bash "$runner" --describe "$file" >/dev/null || {
+              echo "$runner cannot describe $file"
+              exit 1
+            }
+          done < catalog.tsv
+
       - name: Verify checksums
         shell: bash
         run: sha256sum --check --strict SHA256SUMS

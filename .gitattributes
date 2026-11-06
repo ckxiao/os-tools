@@ -1,0 +1,3 @@
+# 仓库在 Windows 上维护、在 Linux 上执行，必须固定为 LF，
+# 否则检出后 .sh 带 CRLF 会导致 shebang 失效、SHA256SUMS 校验失败。
+* text=auto eol=lf
