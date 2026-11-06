@@ -332,6 +332,23 @@ test_modules_use_apt_get_wrapper() {
     return 0
 }
 
+test_no_unquoted_test_operands() {
+    local f hits="" h
+    for f in "$MENU" "$ROOT"/scripts/*/*/*.sh; do
+        [ -f "$f" ] || continue
+        # [ $var = x ] / [ -z $var ] 在变量为空或含空格时会退化成语法错误
+        h="$(grep -nE '\[ (\$[A-Za-z_][A-Za-z0-9_]*|-[nz] \$[A-Za-z_][A-Za-z0-9_]*) (=|!=|==|\])' "$f" |
+            grep -v '\[\[' || true)"
+        [ -n "$h" ] && hits+="$f: $h"$'\n'
+    done
+    if [ -n "$hits" ]; then
+        echo "    发现未加引号的测试操作数："
+        printf '%s' "$hits"
+        return 1
+    fi
+    return 0
+}
+
 # ---------------------------------------------------------------- 运行
 
 main() {

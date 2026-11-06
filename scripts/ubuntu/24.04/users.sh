@@ -693,9 +693,9 @@ manage_privileges() {
     #sudo bash mgt-god.sh manage_privileges ck test
     if [ $# -gt 0 ]; then
         username=$1
-        [ $2 = "add" ] && sudo usermod -aG sudo "$username" && green_echo "权限添加成功($username)"
-        [ $2 = "del" ] && sudo deluser "$username" sudo && green_echo "权限移除成功($username)"
-        [ $2 = "test" ] && sudo -l -U "$username" | grep -q "(ALL) NOPASSWD: ALL" && green_echo "测试通过($username)"
+        [ "$2" = "add" ] && sudo usermod -aG sudo "$username" && green_echo "权限添加成功($username)"
+        [ "$2" = "del" ] && sudo deluser "$username" sudo && green_echo "权限移除成功($username)"
+        [ "$2" = "test" ] && sudo -l -U "$username" | grep -q "(ALL) NOPASSWD: ALL" && green_echo "测试通过($username)"
     else
         # 显示所有用户供选择
         display_all_users
@@ -769,11 +769,11 @@ manage_privileges() {
 ssh_key_management() {
     if [ $# -gt 0 ]; then
         username=$1
-        [ $2 = "cat" ] && cat "/home/$username/.ssh/authorized_keys"
-        [ $2 = "add" ] && echo "$3" >>"/home/$username/.ssh/authorized_keys"
-        [ $2 = "gen" ] && sudo -u "$username" ssh-keygen -t "rsa" -b "4096" -C "SSH Login cert" -f "/home/$username/.ssh/id_rsa" && green_echo "成功" ||
+        [ "$2" = "cat" ] && cat "/home/$username/.ssh/authorized_keys"
+        [ "$2" = "add" ] && echo "$3" >>"/home/$username/.ssh/authorized_keys"
+        [ "$2" = "gen" ] && sudo -u "$username" ssh-keygen -t "rsa" -b "4096" -C "SSH Login cert" -f "/home/$username/.ssh/id_rsa" && green_echo "成功" ||
             red_echo "你失败啦!!!"
-        [ $2 = "zw" ] && ssh-keygen -lf "/home/$username/.ssh/id_rsa" && green_echo "指纹来自id_rsa文件" ||
+        [ "$2" = "zw" ] && ssh-keygen -lf "/home/$username/.ssh/id_rsa" && green_echo "指纹来自id_rsa文件" ||
             ssh-keygen -lf "/home/$username/.ssh/authorized_keys" && green_echo "指纹来自authorized_keys文件"
     else
         # 显示所有用户供选择
@@ -1081,11 +1081,11 @@ password_policy_management() {
     #sudo bash mgt-god.sh password_policy_management complexity 8 1 1 1 1 2 2
 
     if [ $# -gt 0 ]; then
-        [ $1 = "cat" ] && _get_password_complexity
-        [ $1 = "complexity" ] && minlen=${2:-8} && ucredit="-$3" && dcredit="-$4" && lcredit="-$5" && ocredit="-$6" && maxrepeat=$7 && difok=${8:-3} &&
+        [ "$1" = "cat" ] && _get_password_complexity
+        [ "$1" = "complexity" ] && minlen=${2:-8} && ucredit="-$3" && dcredit="-$4" && lcredit="-$5" && ocredit="-$6" && maxrepeat=$7 && difok=${8:-3} &&
             _change_password_complexity "${minlen:-8}" $ucredit $dcredit $lcredit $ocredit $maxrepeat "${difok:-3}"
-        [ $1 = "passmaxday" ] && max_days=$2 && min_days=$3 && warn_age=$4 && _change_password_complexity_passmaxday $max_days $min_days $warn_age
-        [ $1 = "remember" ] && remember=$2 && _change_password_complexity_remember "$remember"
+        [ "$1" = "passmaxday" ] && max_days=$2 && min_days=$3 && warn_age=$4 && _change_password_complexity_passmaxday $max_days $min_days $warn_age
+        [ "$1" = "remember" ] && remember=$2 && _change_password_complexity_remember "$remember"
     else
         while true; do
             echo "==== 密码策略管理 ====="
@@ -1116,10 +1116,10 @@ password_policy_management() {
                     read -p "允许连续重复的字符(默认:3): " maxrepeat
                     read -p "拒绝与旧密码相似(默认:3): " difok
 
-                    [ $dcredit = "1" ] && dcredit="-1"
-                    [ $ucredit = "1" ] && ucredit="-1"
-                    [ $lcredit = "1" ] && lcredit="-1"
-                    [ $ocredit = "1" ] && ocredit="-1"
+                    [ "$dcredit" = "1" ] && dcredit="-1"
+                    [ "$ucredit" = "1" ] && ucredit="-1"
+                    [ "$lcredit" = "1" ] && lcredit="-1"
+                    [ "$ocredit" = "1" ] && ocredit="-1"
                     maxrepeat=${maxrepeat:-3}
 
                     _change_password_complexity "${minlen:-8}" $ucredit $dcredit $lcredit $ocredit $maxrepeat "${difok:-3}" || red_echo "修改失败,请检查输入或权限." && return 1
@@ -1248,7 +1248,7 @@ _change_password_complexity() {
 _change_password_complexity_remember() {
     local remember=${1:-"3"} # 记住的历史密码数量
     # 确保密码哈希设置是幂等的
-    [ $remember = "0" ] && return #如果等于0就不玩了......
+    [ "$remember" = "0" ] && return #如果等于0就不玩了......
     sed -i '/^password\s\+.*pam_unix\.so/d' "$PAM_COMMON_PASSWORD" || red_echo "删除旧配置失败(pam_unix)"
     echo "password    [success=1 default=ignore]      pam_unix.so obscure try_first_pass sha512 remember=${remember} " >>"$PAM_COMMON_PASSWORD" || red_echo "写入密码哈希配置失败"
 }

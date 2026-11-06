@@ -2,7 +2,10 @@
 # Ubuntu 24.04 host hardening.
 script_name=$(basename "$0" .sh)      # 示例：原脚本名称为 deploy.sh 会变成 deploy
 current_time=$(date "+%Y%m%d-%H%M%S") # 获取当前时间戳用于备份文件
-LOG_FILE="log_${script_name}_${current_time}.log"
+# 日志目录与 common.sh 保持一致；不可写时回退当前目录
+LOG_DIR="${DSH_LOG_DIR:-/var/log/dsh-tools}"
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="."
+LOG_FILE="$LOG_DIR/log_${script_name}_${current_time}.log"
 
 # 无人值守：关闭 debconf 提问与 needrestart 的服务重启交互
 export DEBIAN_FRONTEND=noninteractive

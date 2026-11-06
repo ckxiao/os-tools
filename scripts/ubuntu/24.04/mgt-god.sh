@@ -987,12 +987,12 @@ MONITORING_MGMT() {
 system_monitoring() {
     #sudo bash mgt-god.sh system_monitoring cpu 5 true
     if [ $# -gt 0 ]; then
-        [ $1 = "cpu" ] && interval=${2:-5} && local detailed=${3:-false} && _cpu_monitor "$interval" "$detailed"
-        [ $1 = "memory" ] && interval=${2:-5} && _memory_monitor "$interval"
-        [ $1 = "disk" ] && interval=${2:-5} && _disk_monitor "$interval"
-        [ $1 = "load" ] && _load_monitor
-        [ $1 = "temp" ] && _temp_monitor
-        [ $1 = "all" ] && interval=${2:-5} && _os_unified_monitor "$interval"
+        [ "$1" = "cpu" ] && interval=${2:-5} && local detailed=${3:-false} && _cpu_monitor "$interval" "$detailed"
+        [ "$1" = "memory" ] && interval=${2:-5} && _memory_monitor "$interval"
+        [ "$1" = "disk" ] && interval=${2:-5} && _disk_monitor "$interval"
+        [ "$1" = "load" ] && _load_monitor
+        [ "$1" = "temp" ] && _temp_monitor
+        [ "$1" = "all" ] && interval=${2:-5} && _os_unified_monitor "$interval"
 
     else
         # 主交互逻辑
@@ -1577,10 +1577,10 @@ search_package() {
 # 4. 软件包更新管理
 update_packages() {
     if [ $# -gt 0 ]; then
-        [ $1 = "check" ] && _check_updates
-        [ $1 = "security" ] && _security_updates
-        [ $1 = "update" ] && _perform_update "$2"
-        [ $1 = "log" ] && _view_update_log
+        [ "$1" = "check" ] && _check_updates
+        [ "$1" = "security" ] && _security_updates
+        [ "$1" = "update" ] && _perform_update "$2"
+        [ "$1" = "log" ] && _view_update_log
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -1612,10 +1612,10 @@ update_packages() {
 # 5. 软件仓库管理
 manage_repositories() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _list_repos
-        [ $1 = "add" ] && _add_repo "$2" "$3" "$4"
-        [ $1 = "remove" ] && _remove_repo "$2"
-        [ $1 = "gpg" ] && _manage_gpg_keys
+        [ "$1" = "list" ] && _list_repos
+        [ "$1" = "add" ] && _add_repo "$2" "$3" "$4"
+        [ "$1" = "remove" ] && _remove_repo "$2"
+        [ "$1" = "gpg" ] && _manage_gpg_keys
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -1652,9 +1652,9 @@ manage_repositories() {
 # 6. 软件包依赖分析
 analyze_package_dependencies() {
     if [ $# -gt 0 ]; then
-        [ $1 = "tree" ] && _show_dep_tree "$2"
-        [ $1 = "reverse" ] && _reverse_deps "$2"
-        [ $1 = "conflict" ] && _check_conflicts "$2"
+        [ "$1" = "tree" ] && _show_dep_tree "$2"
+        [ "$1" = "reverse" ] && _reverse_deps "$2"
+        [ "$1" = "conflict" ] && _check_conflicts "$2"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -1690,10 +1690,10 @@ analyze_package_dependencies() {
 # 7. 软件包缓存清理
 clean_package_cache() {
     if [ $# -gt 0 ]; then
-        [ $1 = "cache" ] && _clean_download_cache
-        [ $1 = "old" ] && _remove_old_kernels
-        [ $1 = "orphans" ] && _remove_orphans
-        [ $1 = "space" ] && _show_disk_usage
+        [ "$1" = "cache" ] && _clean_download_cache
+        [ "$1" = "old" ] && _remove_old_kernels
+        [ "$1" = "orphans" ] && _remove_orphans
+        [ "$1" = "space" ] && _show_disk_usage
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2088,8 +2088,8 @@ LOG_MGMT() {
 
 display_system_logs() {
     if [ $# -gt 0 ]; then
-        [ $1 = "less" ] && _display_system_logs "" "less"
-        [ $1 = "time" ] && time_range=$2 && _display_system_logs $time_range "less"
+        [ "$1" = "less" ] && _display_system_logs "" "less"
+        [ "$1" = "time" ] && time_range=$2 && _display_system_logs $time_range "less"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2150,9 +2150,9 @@ monitor_logs_realtime() {
 # 按关键词搜索日志
 search_logs_by_keyword() {
     if [ $# -gt 0 ]; then
-        [ $1 = "search" ] && keyword=$2 && logfile=$3 && _search_logs "$keyword" "$logfile"
-        [ $1 = "regex" ] && pattern=$2 && logfile=$3 && _search_logs_regex "$pattern" "$logfile"
-        [ $1 = "time" ] && keyword=$2 && logfile=$3 && start_time=$4 && end_time=$5 && _search_logs_time "$keyword" "$logfile" "$start_time" "$end_time"
+        [ "$1" = "search" ] && keyword=$2 && logfile=$3 && _search_logs "$keyword" "$logfile"
+        [ "$1" = "regex" ] && pattern=$2 && logfile=$3 && _search_logs_regex "$pattern" "$logfile"
+        [ "$1" = "time" ] && keyword=$2 && logfile=$3 && start_time=$4 && end_time=$5 && _search_logs_time "$keyword" "$logfile" "$start_time" "$end_time"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2198,9 +2198,9 @@ search_logs_by_keyword() {
 # 日志文件分析
 analyze_log_files() {
     if [ $# -gt 0 ]; then
-        [ $1 = "stats" ] && logfile=$2 && _analyze_log_stats "$logfile"
-        [ $1 = "errors" ] && logfile=$2 && _analyze_log_errors "$logfile"
-        [ $1 = "patterns" ] && logfile=$2 && _analyze_log_patterns "$logfile"
+        [ "$1" = "stats" ] && logfile=$2 && _analyze_log_stats "$logfile"
+        [ "$1" = "errors" ] && logfile=$2 && _analyze_log_errors "$logfile"
+        [ "$1" = "patterns" ] && logfile=$2 && _analyze_log_patterns "$logfile"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2241,8 +2241,8 @@ analyze_log_files() {
 # 清理日志
 clear_logs() {
     if [ $# -gt 0 ]; then
-        [ $1 = "time" ] && days=$2 && _clear_logs_by_time "$days"
-        [ $1 = "size" ] && size=$2 && _clear_logs_by_size "$size"
+        [ "$1" = "time" ] && days=$2 && _clear_logs_by_time "$days"
+        [ "$1" = "size" ] && size=$2 && _clear_logs_by_size "$size"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2282,9 +2282,9 @@ clear_logs() {
 # 配置日志轮转
 configure_log_rotation() {
     if [ $# -gt 0 ]; then
-        [ $1 = "show" ] && _show_logrotate_config
-        [ $1 = "days" ] && logname=$2 && days=$3 && _set_logrotate_days "$logname" "$days"
-        [ $1 = "size" ] && logname=$2 && size=$3 && _set_logrotate_size "$logname" "$size"
+        [ "$1" = "show" ] && _show_logrotate_config
+        [ "$1" = "days" ] && logname=$2 && days=$3 && _set_logrotate_days "$logname" "$days"
+        [ "$1" = "size" ] && logname=$2 && size=$3 && _set_logrotate_size "$logname" "$size"
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -2768,10 +2768,10 @@ OPS_SSH_KEY_MGMT() {
         2)
             #NODES=(ckk8s01master001 ckk8s01worker001 ckk8s01worker002 dockerck)  # 目标服务器IP
             usernow=$(logname 2>/dev/null || echo "$USER")
-            [ $usernow = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
+            [ "$usernow" = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
             read -p "本地的密钥路径(默认:"$KEY_PATH"): " KEY_PATH
             if [ -z "$KEY_PATH" ]; then
-                [ $usernow = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
+                [ "$usernow" = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
             fi
             read -p "请输入本次操作的用户名: " USERNAME
             read -p "如果第一次上传到成员服务器,请输入密码,如果是后续更新密码,请跳过(输入密码 | Enter跳过): " PASSD
@@ -2798,10 +2798,10 @@ OPS_SSH_KEY_MGMT() {
             ;;
         5)
             usernow=$(logname 2>/dev/null || echo "$USER")
-            [ $usernow = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
+            [ "$usernow" = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
             read -p "请输入证书文件路径(公钥|私钥, 默认:"$KEY_PATH"): " KEY_PATH
             if [ -z "$KEY_PATH" ]; then
-                [ $usernow = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
+                [ "$usernow" = "root" ] && KEY_PATH="root/.ssh/id_rsa.pub" || KEY_PATH="/home/$usernow/.ssh/id_rsa.pub"
             fi
             green_echo "输入信息为: $KEY_PATH "
             read -p "请确认操作(Y|N,default:Y): " areyouok

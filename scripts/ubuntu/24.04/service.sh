@@ -39,7 +39,7 @@ SERVICE_MGMT() {
 # 1. 服务查询
 display_services() {
     if [ $# -gt 0 ]; then
-        [ $1 = "s" ] && _show_service_description $2 && return
+        [ "$1" = "s" ] && _show_service_description $2 && return
         _display_services $1 && return
     fi
 
@@ -93,11 +93,11 @@ display_services() {
 # 2. 启动/停止/重启服务
 manage_service() {
     if [ $# -gt 0 ]; then
-        [ $2 = "start" ] && service=$1 && _start_service "$service"
-        [ $2 = "stop" ] && service=$1 && _stop_service "$service"
-        [ $2 = "restart" ] && service=$1 && _restart_service "$service"
-        [ $2 = "reload" ] && service=$1 && _reload_service "$service"
-        [ $2 = "status" ] && service=$1 && _status_service "$service"
+        [ "$2" = "start" ] && service=$1 && _start_service "$service"
+        [ "$2" = "stop" ] && service=$1 && _stop_service "$service"
+        [ "$2" = "restart" ] && service=$1 && _restart_service "$service"
+        [ "$2" = "reload" ] && service=$1 && _reload_service "$service"
+        [ "$2" = "status" ] && service=$1 && _status_service "$service"
     else
         # 主交互逻辑
         while true; do
@@ -148,10 +148,10 @@ manage_service() {
 # 3. 服务状态监控
 monitor_service_status() {
     if [ $# -gt 0 ]; then
-        [ $1 = "monitor" ] && service=$2 && interval=${3:-5} && _monitor_service "$service" "$interval"
-        [ $1 = "stats" ] && service=$2 && _show_stats "$service"
-        [ $1 = "test" ] && service=$2 && _test_response "$service"
-        [ $1 = "dashboard" ] && _show_dashboard
+        [ "$1" = "monitor" ] && service=$2 && interval=${3:-5} && _monitor_service "$service" "$interval"
+        [ "$1" = "stats" ] && service=$2 && _show_stats "$service"
+        [ "$1" = "test" ] && service=$2 && _test_response "$service"
+        [ "$1" = "dashboard" ] && _show_dashboard
     else
         # 主交互逻辑
         while true; do
@@ -198,11 +198,11 @@ monitor_service_status() {
 # 4. 服务日志查看
 view_service_logs() {
     if [ $# -gt 0 ]; then
-        [ $1 = "latest" ] && service=$2 && lines=${3:-20} && _show_latest_logs "$service" "$lines"
-        [ $1 = "filter" ] && service=$2 && since=$3 && until=$4 && _filter_logs_by_time "$service" "$since" "$until"
-        [ $1 = "search" ] && service=$2 && keyword=$3 && _search_logs "$service" "$keyword"
-        [ $1 = "export" ] && service=$2 && filename=$3 && _export_logs "$service" "$filename"
-        [ $1 = "follow" ] && service=$2 && _follow_logs "$service"
+        [ "$1" = "latest" ] && service=$2 && lines=${3:-20} && _show_latest_logs "$service" "$lines"
+        [ "$1" = "filter" ] && service=$2 && since=$3 && until=$4 && _filter_logs_by_time "$service" "$since" "$until"
+        [ "$1" = "search" ] && service=$2 && keyword=$3 && _search_logs "$service" "$keyword"
+        [ "$1" = "export" ] && service=$2 && filename=$3 && _export_logs "$service" "$filename"
+        [ "$1" = "follow" ] && service=$2 && _follow_logs "$service"
     else
         # 主交互逻辑
         while true; do
@@ -257,9 +257,9 @@ view_service_logs() {
 # 5. 服务依赖分析
 analyze_service_dependencies() {
     if [ $# -gt 0 ]; then
-        [ $1 = "tree" ] && service=$2 && _show_dependency_tree "$service"
-        [ $1 = "circular" ] && service=$2 && _check_circular_deps "$service"
-        [ $1 = "report" ] && service=$2 && _generate_dep_report "$service"
+        [ "$1" = "tree" ] && service=$2 && _show_dependency_tree "$service"
+        [ "$1" = "circular" ] && service=$2 && _check_circular_deps "$service"
+        [ "$1" = "report" ] && service=$2 && _generate_dep_report "$service"
     else
         # 主交互逻辑
         while true; do
@@ -301,10 +301,10 @@ analyze_service_dependencies() {
 # 6. 服务自动启动配置
 configure_service_autostart() {
     if [ $# -gt 0 ]; then
-        [ $2 = "check" ] && service=$1 && _check_autostart "$service"
-        [ $2 = "enable" ] && service=$1 && _toggle_autostart "$service" "enable"
-        [ $2 = "disable" ] && service=$1 && _toggle_autostart "$service" "disable"
-        [ $2 = "batch" ] && config_file=$1 && action=$3 && _batch_configure "$config_file" "$action"
+        [ "$2" = "check" ] && service=$1 && _check_autostart "$service"
+        [ "$2" = "enable" ] && service=$1 && _toggle_autostart "$service" "enable"
+        [ "$2" = "disable" ] && service=$1 && _toggle_autostart "$service" "disable"
+        [ "$2" = "batch" ] && config_file=$1 && action=$3 && _batch_configure "$config_file" "$action"
     else
         # 主交互逻辑
         while true; do
@@ -352,8 +352,8 @@ configure_service_autostart() {
 
 install_uninstall_service() {
     if [ $# -gt 0 ]; then
-        [ $1 = "docker" ] && _install_docker
-        [ $1 = "ckautotask" ] && installtype=$2 && _ckautotask_installer $installtype
+        [ "$1" = "docker" ] && _install_docker
+        [ "$1" = "ckautotask" ] && installtype=$2 && _ckautotask_installer $installtype
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -383,9 +383,9 @@ install_uninstall_service() {
                     continue
                     ;;
                 esac
-                [ $action = "install" ] && _ckautotask_installer
-                [ $action = "uninstall" ] && _ckautotask_installer "c"
-                [ $action = "show" ] && _show_service_description "ckautotask.service"
+                [ "$action" = "install" ] && _ckautotask_installer
+                [ "$action" = "uninstall" ] && _ckautotask_installer "c"
+                [ "$action" = "show" ] && _show_service_description "ckautotask.service"
                 ;;
             0)
                 return
@@ -844,7 +844,7 @@ _ckautotask_installer() {
 
     fi
 
-    if [ $DEPLOY_TYPE = "c" ]; then
+    if [ "$DEPLOY_TYPE" = "c" ]; then
         echo "删除旧服务目录文件成功, 退出安装脚本..."
         exit 0
     fi
@@ -975,7 +975,8 @@ while true; do
     execute_scripts "running" "false"
 
     unset file current_time current_date error_code  # 及时释放变量
-    sudo sync && echo 3 > /proc/sys/vm/drop_caches  # 清理缓存
+    # 注意: 此处不做 drop_caches。每轮(默认 60s)清空页缓存会持续影响整机 IO 性能，
+    # 若确有需要，请由运维在宿主机上按需执行，而不是由调度器周期性触发。
     wait \$! 2>/dev/null         # 等待子进程结束
     sleep \$pausetime
 done

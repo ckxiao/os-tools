@@ -64,11 +64,11 @@ K8S_MGMT() {
 # 集群管理
 k8s_cluster_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "status" ] && _k8s_cluster_status
-        [ $1 = "health" ] && _k8s_cluster_health
-        [ $1 = "upgrade" ] && version=$2 && _k8s_cluster_upgrade "$version"
-        [ $1 = "backup" ] && backup_file=$2 && _k8s_cluster_backup "$backup_file"
-        [ $1 = "restore" ] && backup_file=$2 && _k8s_cluster_restore "$backup_file"
+        [ "$1" = "status" ] && _k8s_cluster_status
+        [ "$1" = "health" ] && _k8s_cluster_health
+        [ "$1" = "upgrade" ] && version=$2 && _k8s_cluster_upgrade "$version"
+        [ "$1" = "backup" ] && backup_file=$2 && _k8s_cluster_backup "$backup_file"
+        [ "$1" = "restore" ] && backup_file=$2 && _k8s_cluster_restore "$backup_file"
     else
         # 主交互逻辑
         while true; do
@@ -125,9 +125,9 @@ k8s_cluster_mgmt() {
 
 hpa_management() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _hpa_list
-        [ $1 = "create" ] && namespace=$2 && hpa_name=$3 && min_replicas=$4 && max_replicas=$5 && target_cpu=$6 && _hpa_create "$namespace" "$hpa_name" "$min_replicas" "$max_replicas" "$target_cpu"
-        [ $1 = "delete" ] && namespace=$2 && hpa_name=$3 && _hpa_delete "$namespace" "$hpa_name"
+        [ "$1" = "list" ] && _hpa_list
+        [ "$1" = "create" ] && namespace=$2 && hpa_name=$3 && min_replicas=$4 && max_replicas=$5 && target_cpu=$6 && _hpa_create "$namespace" "$hpa_name" "$min_replicas" "$max_replicas" "$target_cpu"
+        [ "$1" = "delete" ] && namespace=$2 && hpa_name=$3 && _hpa_delete "$namespace" "$hpa_name"
     else
         # 主交互逻辑
         while true; do
@@ -177,9 +177,9 @@ hpa_management() {
 
 crd_management() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _crd_list
-        [ $1 = "describe" ] && crd_name=$2 && _crd_describe "$crd_name"
-        [ $1 = "delete" ] && crd_name=$2 && _crd_delete "$crd_name"
+        [ "$1" = "list" ] && _crd_list
+        [ "$1" = "describe" ] && crd_name=$2 && _crd_describe "$crd_name"
+        [ "$1" = "delete" ] && crd_name=$2 && _crd_delete "$crd_name"
     else
         # 主交互逻辑
         while true; do
@@ -232,9 +232,9 @@ crd_management() {
 
 scheduler_management() {
     if [ $# -gt 0 ]; then
-        [ $1 = "view" ] && _scheduler_view
-        [ $1 = "edit" ] && _scheduler_edit
-        [ $1 = "reset" ] && _scheduler_reset
+        [ "$1" = "view" ] && _scheduler_view
+        [ "$1" = "edit" ] && _scheduler_edit
+        [ "$1" = "reset" ] && _scheduler_reset
     else
         # 主交互逻辑
         while true; do
@@ -441,11 +441,11 @@ k8s_image_operations() {
 # 节点管理
 k8s_node_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "status" ] && _k8s_node_status "$2"
-        [ $1 = "add" ] && node_name=$2 && _k8s_node_add "$node_name"
-        [ $1 = "remove" ] && node_name=$2 && _k8s_node_remove "$node_name"
-        [ $1 = "maintenance" ] && node_name=$2 && action=$3 && _k8s_node_maintenance "$node_name" "$action"
-        [ $1 = "monitor" ] && node_name=$2 && _k8s_node_monitor "$node_name"
+        [ "$1" = "status" ] && _k8s_node_status "$2"
+        [ "$1" = "add" ] && node_name=$2 && _k8s_node_add "$node_name"
+        [ "$1" = "remove" ] && node_name=$2 && _k8s_node_remove "$node_name"
+        [ "$1" = "maintenance" ] && node_name=$2 && action=$3 && _k8s_node_maintenance "$node_name" "$action"
+        [ "$1" = "monitor" ] && node_name=$2 && _k8s_node_monitor "$node_name"
     else
         # 主交互逻辑
         while true; do
@@ -520,11 +520,11 @@ k8s_node_mgmt() {
 # 命名空间管理
 k8s_namespace_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_namespace_list
-        [ $1 = "create" ] && namespace=$2 && _k8s_namespace_create "$namespace"
-        [ $1 = "delete" ] && namespace=$2 && _k8s_namespace_delete "$namespace"
-        [ $1 = "quota" ] && namespace=$2 && quota_file=$3 && _k8s_namespace_quota "$namespace" "$quota_file"
-        [ $1 = "usage" ] && namespace=$2 && _k8s_namespace_usage "$namespace"
+        [ "$1" = "list" ] && _k8s_namespace_list
+        [ "$1" = "create" ] && namespace=$2 && _k8s_namespace_create "$namespace"
+        [ "$1" = "delete" ] && namespace=$2 && _k8s_namespace_delete "$namespace"
+        [ "$1" = "quota" ] && namespace=$2 && quota_file=$3 && _k8s_namespace_quota "$namespace" "$quota_file"
+        [ "$1" = "usage" ] && namespace=$2 && _k8s_namespace_usage "$namespace"
     else
         # 交互逻辑
         while true; do
@@ -592,10 +592,10 @@ k8s_namespace_mgmt() {
 # 工作负载管理
 k8s_workload_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "deployment" ] && _k8s_workload_deployment_list
-        [ $1 = "statefulset" ] && _k8s_workload_statefulset_list
-        [ $1 = "daemonset" ] && _k8s_workload_daemonset_list
-        [ $1 = "cronjob" ] && _k8s_workload_cronjob_list
+        [ "$1" = "deployment" ] && _k8s_workload_deployment_list
+        [ "$1" = "statefulset" ] && _k8s_workload_statefulset_list
+        [ "$1" = "daemonset" ] && _k8s_workload_daemonset_list
+        [ "$1" = "cronjob" ] && _k8s_workload_cronjob_list
     else
         # 主交互逻辑
         while true; do
@@ -637,11 +637,11 @@ k8s_workload_mgmt() {
 # 网络管理
 k8s_network_policy_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_network_policy_list
-        [ $1 = "detail" ] && _k8s_network_policy_detail "$2" "$3"
-        [ $1 = "create" ] && _k8s_network_policy_apply "$2"
-        [ $1 = "delete" ] && _k8s_network_policy_delete "$2" "$3"
-        [ $1 = "update" ] && _k8s_network_policy_apply "$2"
+        [ "$1" = "list" ] && _k8s_network_policy_list
+        [ "$1" = "detail" ] && _k8s_network_policy_detail "$2" "$3"
+        [ "$1" = "create" ] && _k8s_network_policy_apply "$2"
+        [ "$1" = "delete" ] && _k8s_network_policy_delete "$2" "$3"
+        [ "$1" = "update" ] && _k8s_network_policy_apply "$2"
     else
         # 主交互逻辑
         while true; do
@@ -701,11 +701,11 @@ k8s_network_policy_mgmt() {
 
 k8s_svc_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_network_service_list
-        [ $1 = "detail" ] && _k8s_network_service_detail "$2" "$3"
-        [ $1 = "create" ] && _k8s_network_service_apply "$2"
-        [ $1 = "delete" ] && _k8s_network_service_delete "$2" "$3"
-        [ $1 = "update" ] && _k8s_network_service_apply "$2"
+        [ "$1" = "list" ] && _k8s_network_service_list
+        [ "$1" = "detail" ] && _k8s_network_service_detail "$2" "$3"
+        [ "$1" = "create" ] && _k8s_network_service_apply "$2"
+        [ "$1" = "delete" ] && _k8s_network_service_delete "$2" "$3"
+        [ "$1" = "update" ] && _k8s_network_service_apply "$2"
     else
         # 主交互逻辑
         while true; do
@@ -766,10 +766,10 @@ k8s_svc_mgmt() {
 
 k8s_ingress_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_network_ingress_list
-        [ $1 = "detail" ] && _k8s_network_ingress_detail "$2" "$3"
-        [ $1 = "create" ] && _k8s_network_ingress_create "$2"
-        [ $1 = "delete" ] && _k8s_network_ingress_delete "$2" "$3"
+        [ "$1" = "list" ] && _k8s_network_ingress_list
+        [ "$1" = "detail" ] && _k8s_network_ingress_detail "$2" "$3"
+        [ "$1" = "create" ] && _k8s_network_ingress_create "$2"
+        [ "$1" = "delete" ] && _k8s_network_ingress_delete "$2" "$3"
     else
         # 主交互逻辑
         while true; do
@@ -828,8 +828,8 @@ k8s_ingress_mgmt() {
 
 k8s_dns_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_network_dns_check
-        [ $1 = "config" ] && _k8s_network_dns_config "$2"
+        [ "$1" = "list" ] && _k8s_network_dns_check
+        [ "$1" = "config" ] && _k8s_network_dns_config "$2"
     else
         # 主交互逻辑
         while true; do
@@ -868,10 +868,10 @@ k8s_dns_mgmt() {
 k8s_storage_mgmt() {
     # 主交互逻辑
     if [ $# -gt 0 ]; then
-        [ $1 = "pv" ] && _k8s_storage_pv_list
-        [ $1 = "pvc" ] && _k8s_storage_pvc_list
-        [ $1 = "sc" ] && _k8s_storage_sc_list
-        [ $1 = "monitor" ] && _k8s_storage_monitor
+        [ "$1" = "pv" ] && _k8s_storage_pv_list
+        [ "$1" = "pvc" ] && _k8s_storage_pvc_list
+        [ "$1" = "sc" ] && _k8s_storage_sc_list
+        [ "$1" = "monitor" ] && _k8s_storage_monitor
     else
         while true; do
             BLUE_echo "------------------------------------------------------"
@@ -912,17 +912,17 @@ k8s_storage_mgmt() {
 # 7) Pod管理路由
 k8s_pod_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_pod_list
-        [ $1 = "describe" ] && pod_name=$2 && _k8s_pod_describe "$pod_name"
-        [ $1 = "exec" ] && pod_name=$2 && command=$3 && _k8s_pod_exec "$pod_name" "$command"
-        [ $1 = "delete" ] && pod_name=$2 && _k8s_pod_delete "$pod_name"
-        [ $1 = "restart" ] && pod_name=$2 && _k8s_pod_restart "$pod_name"
-        [ $1 = "export" ] && pod_name=$2 && output_file=$3 && _k8s_pod_export "$pod_name" "$output_file"
-        [ $1 = "logs" ] && pod_name=$2 && _k8s_pod_logs "$pod_name"
-        [ $1 = "label" ] && pod_name=$2 && label_key=$3 && label_value=$4 && _k8s_pod_label "$pod_name" "$label_key" "$label_value"
-        [ $1 = "resources" ] && pod_name=$2 && _k8s_pod_resources "$pod_name"
-        [ $1 = "events" ] && pod_name=$2 && _k8s_pod_events "$pod_name"
-        [ $1 = "copy" ] && pod_name=$2 && src_path=$3 && dest_path=$4 && _k8s_pod_copy "$pod_name" "$src_path" "$dest_path"
+        [ "$1" = "list" ] && _k8s_pod_list
+        [ "$1" = "describe" ] && pod_name=$2 && _k8s_pod_describe "$pod_name"
+        [ "$1" = "exec" ] && pod_name=$2 && command=$3 && _k8s_pod_exec "$pod_name" "$command"
+        [ "$1" = "delete" ] && pod_name=$2 && _k8s_pod_delete "$pod_name"
+        [ "$1" = "restart" ] && pod_name=$2 && _k8s_pod_restart "$pod_name"
+        [ "$1" = "export" ] && pod_name=$2 && output_file=$3 && _k8s_pod_export "$pod_name" "$output_file"
+        [ "$1" = "logs" ] && pod_name=$2 && _k8s_pod_logs "$pod_name"
+        [ "$1" = "label" ] && pod_name=$2 && label_key=$3 && label_value=$4 && _k8s_pod_label "$pod_name" "$label_key" "$label_value"
+        [ "$1" = "resources" ] && pod_name=$2 && _k8s_pod_resources "$pod_name"
+        [ "$1" = "events" ] && pod_name=$2 && _k8s_pod_events "$pod_name"
+        [ "$1" = "copy" ] && pod_name=$2 && src_path=$3 && dest_path=$4 && _k8s_pod_copy "$pod_name" "$src_path" "$dest_path"
     else
         # 主交互逻辑
         while true; do
@@ -1217,14 +1217,14 @@ k8s_cm_mgmt() {
 # 9) Secret管理路由
 k8s_secret_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] && _k8s_secret_list
-        [ $1 = "details" ] && _k8s_secret_details "$2" "$3"
-        [ $1 = "tsl" ] && _k8s_secret_create_tls "$2" "$3" "$4" "$5" "$6"
-        [ $1 = "generic" ] && _k8s_secret_create_generic "$2" "$3" "$4" "$5" "$6"
-        [ $1 = "registry" ] && _k8s_secret_create_dockerregistry "$2" "$3" "$4" "$5" "$6"
-        [ $1 = "update" ] && _k8s_secret_update "$2" "$3" "$4"
-        [ $1 = "delete" ] && _k8s_secret_delete "$2" "$3"
-        [ $1 = "export" ] && _k8s_secret_export "$2" "$3" "$4"
+        [ "$1" = "list" ] && _k8s_secret_list
+        [ "$1" = "details" ] && _k8s_secret_details "$2" "$3"
+        [ "$1" = "tsl" ] && _k8s_secret_create_tls "$2" "$3" "$4" "$5" "$6"
+        [ "$1" = "generic" ] && _k8s_secret_create_generic "$2" "$3" "$4" "$5" "$6"
+        [ "$1" = "registry" ] && _k8s_secret_create_dockerregistry "$2" "$3" "$4" "$5" "$6"
+        [ "$1" = "update" ] && _k8s_secret_update "$2" "$3" "$4"
+        [ "$1" = "delete" ] && _k8s_secret_delete "$2" "$3"
+        [ "$1" = "export" ] && _k8s_secret_export "$2" "$3" "$4"
     else
         while true; do
             clear
@@ -1348,13 +1348,13 @@ k8s_secret_mgmt() {
 # 10) RBAC配置路由
 k8s_rbac_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list_roles" ] && _k8s_rbac_list_roles
-        [ $1 = "list_rolebindings" ] && _k8s_rbac_list_rolebindings
-        [ $1 = "list_clusterroles" ] && _k8s_rbac_list_clusterroles
-        [ $1 = "list_clusterrolebindings" ] && _k8s_rbac_list_clusterrolebindings
-        [ $1 = "view_rules" ] && namespace=$2 && _k8s_rbac_view_rules "$namespace"
-        [ $1 = "apply_rules" ] && file=$2 && _k8s_rbac_apply_rules "$file"
-        [ $1 = "delete_rules" ] && resource=$2 name=$3 && _k8s_rbac_delete_rules "$resource" "$name"
+        [ "$1" = "list_roles" ] && _k8s_rbac_list_roles
+        [ "$1" = "list_rolebindings" ] && _k8s_rbac_list_rolebindings
+        [ "$1" = "list_clusterroles" ] && _k8s_rbac_list_clusterroles
+        [ "$1" = "list_clusterrolebindings" ] && _k8s_rbac_list_clusterrolebindings
+        [ "$1" = "view_rules" ] && namespace=$2 && _k8s_rbac_view_rules "$namespace"
+        [ "$1" = "apply_rules" ] && file=$2 && _k8s_rbac_apply_rules "$file"
+        [ "$1" = "delete_rules" ] && resource=$2 name=$3 && _k8s_rbac_delete_rules "$resource" "$name"
     else
         # 主交互逻辑
         while true; do
@@ -1429,11 +1429,11 @@ k8s_rbac_mgmt() {
 # 11) 资源限制配置路由
 k8s_resource_limits_mgmt() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list-quotas" ] && _k8s_resource_list_quotas
-        [ $1 = "list-limits" ] && _k8s_resource_list_limits
-        [ $1 = "describe" ] && namespace=$2 && _k8s_resource_describe "$namespace"
-        [ $1 = "apply" ] && file=$2 && _k8s_resource_apply "$file"
-        [ $1 = "delete" ] && namespace=$2 && _k8s_resource_delete "$namespace"
+        [ "$1" = "list-quotas" ] && _k8s_resource_list_quotas
+        [ "$1" = "list-limits" ] && _k8s_resource_list_limits
+        [ "$1" = "describe" ] && namespace=$2 && _k8s_resource_describe "$namespace"
+        [ "$1" = "apply" ] && file=$2 && _k8s_resource_apply "$file"
+        [ "$1" = "delete" ] && namespace=$2 && _k8s_resource_delete "$namespace"
     else
         while true; do
             clear
@@ -1492,8 +1492,8 @@ k8s_resource_limits_mgmt() {
 
 k8s_resource_config_apply() {
     if [ $# -gt 0 ]; then
-        [ $1 = "apply" ] && _k8s__apply_resource_yaml $1 $2
-        [ $1 = "delete" ] && _k8s__delete_resource_yaml $1 $2
+        [ "$1" = "apply" ] && _k8s__apply_resource_yaml $1 $2
+        [ "$1" = "delete" ] && _k8s__delete_resource_yaml $1 $2
     else
         while true; do
             clear
@@ -1779,7 +1779,7 @@ _k8s_export_image() {
 _k8s_import_image() {
     local filepath=$1
     local ns=$2
-    if [ -z $image_id ] || [ -z $filepath ]; then
+    if [ -z "$image_id" ] || [ -z "$filepath" ]; then
         RED_echo "错误: 输入信息不能为空"
         return 1
     fi
@@ -1939,7 +1939,7 @@ _k8s__apply_resource_yaml() {
     local file=$1
     local nsname=$2
     blue_echo "正在应用资源配置..."
-    if [ -z $nsname ]; then
+    if [ -z "$nsname" ]; then
         kubectl apply -f "$file"
     else
         kubectl apply -f "$file" -n $nsname
@@ -1951,7 +1951,7 @@ _k8s__delete_resource_yaml() {
     local file=$1
     local nsname=$2
     blue_echo "正在删除资源配置..."
-    if [ -z $nsname ]; then
+    if [ -z "$nsname" ]; then
         kubectl delete -f "$file"
     else
         kubectl delete -f "$file" -n $nsname
@@ -2027,7 +2027,7 @@ _k8s_secret_create_tls() {
     blue_echo "------------------------------------------------------"
     yellow_echo "正在创建 Secret ${secret_name}..."
 
-    if [ $create_type = "Y" ]; then
+    if [ "$create_type" = "Y" ]; then
         openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
             -keyout tls.key -out tls.crt \
             -subj "/CN=argocd.ckadmin.com"
@@ -2079,7 +2079,7 @@ _k8s_pod_list() {
 _list_configmaps() {
     blue_echo "正在列出所有ConfigMap..."
     local namespace="$1"
-    if [ $namespace = "all" ]; then
+    if [ "$namespace" = "all" ]; then
         kubectl get configmaps -A | awk '{print NR-1,$0}'
     else
         kubectl get configmaps -n "$namespace" | awk '{print NR-1,$0}'

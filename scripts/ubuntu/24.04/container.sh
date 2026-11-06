@@ -274,16 +274,16 @@ container_operations() {
 # 2. 镜像管理
 image_operations() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] || [ $1 = "1" ] && _list_images
-        [ $1 = "search" ] && image_name=$2 && _search_image "$image_name"
-        [ $1 = "pull" ] && image_name=$2 && _pull_image "$image_name"
-        [ $1 = "push" ] && image_name=$2 && _push_image "$image_name"
-        [ $1 = "build" ] && dockerfile_path=$2 && tag=$3 && _build_image "$dockerfile_path" "$tag"
-        [ $1 = "remove" ] && image_name=$2 && _remove_image "$image_name"
-        [ $1 = "tag" ] && image_name=$2 && target_name=$3 && _tag_image "$image_name" "$target_name"
-        [ $1 = "history" ] && image_name=$2 && _image_history "$image_name"
-        [ $1 = "export" ] && image_name=$2 && output="${3:-"."}" && _save_image "$image_name" "$output"
-        [ $1 = "import" ] && image_name=$2 && filepath="${3:-"."}" && _import_image "$image_name" "$filepath"
+        [ "$1" = "list" ] || [ "$1" = "1" ] && _list_images
+        [ "$1" = "search" ] && image_name=$2 && _search_image "$image_name"
+        [ "$1" = "pull" ] && image_name=$2 && _pull_image "$image_name"
+        [ "$1" = "push" ] && image_name=$2 && _push_image "$image_name"
+        [ "$1" = "build" ] && dockerfile_path=$2 && tag=$3 && _build_image "$dockerfile_path" "$tag"
+        [ "$1" = "remove" ] && image_name=$2 && _remove_image "$image_name"
+        [ "$1" = "tag" ] && image_name=$2 && target_name=$3 && _tag_image "$image_name" "$target_name"
+        [ "$1" = "history" ] && image_name=$2 && _image_history "$image_name"
+        [ "$1" = "export" ] && image_name=$2 && output="${3:-"."}" && _save_image "$image_name" "$output"
+        [ "$1" = "import" ] && image_name=$2 && filepath="${3:-"."}" && _import_image "$image_name" "$filepath"
 
     else
         # 主交互逻辑
@@ -655,11 +655,11 @@ secret_config_operations() {
 # 6. Dockerfile管理
 dockerfile_operations() {
     if [ $# -gt 0 ]; then
-        [ $1 = "validate" ] && file=${2:-"Dockerfile"} && _dockerfile_validate "$file"
-        [ $1 = "build" ] && file=${2:-"Dockerfile"} && tag=${3:-"latest"} && _dockerfile_build "$file" "$tag"
-        [ $1 = "lint" ] && file=${2:-"Dockerfile"} && _dockerfile_lint "$file"
-        [ $1 = "template" ] && type=${2:-"list"} && [ $type = "get" ] && name=$3 && _dockerfile_template "$type" "$name"
-        [ $1 = "multistage" ] && action=${2:-"list"} && [ $action = "add" ] && stage_name=$3 && _dockerfile_multistage "$action" "$stage_name"
+        [ "$1" = "validate" ] && file=${2:-"Dockerfile"} && _dockerfile_validate "$file"
+        [ "$1" = "build" ] && file=${2:-"Dockerfile"} && tag=${3:-"latest"} && _dockerfile_build "$file" "$tag"
+        [ "$1" = "lint" ] && file=${2:-"Dockerfile"} && _dockerfile_lint "$file"
+        [ "$1" = "template" ] && type=${2:-"list"} && [ "$type" = "get" ] && name=$3 && _dockerfile_template "$type" "$name"
+        [ "$1" = "multistage" ] && action=${2:-"list"} && [ "$action" = "add" ] && stage_name=$3 && _dockerfile_multistage "$action" "$stage_name"
     else
         # 主交互逻辑
         while true; do
@@ -733,11 +733,11 @@ dockerfile_operations() {
 # 7. 系统资源监控
 docker_system_monitoring() {
     if [ $# -gt 0 ]; then
-        [ $1 = "status" ] && _system_docker_status
-        [ $1 = "stats" ] && _system_docker_resource_stats
-        [ $1 = "events" ] && _system_docker_events
-        [ $1 = "profile" ] && _system_performance_profile
-        [ $1 = "clean" ] && _system_auto_clean
+        [ "$1" = "status" ] && _system_docker_status
+        [ "$1" = "stats" ] && _system_docker_resource_stats
+        [ "$1" = "events" ] && _system_docker_events
+        [ "$1" = "profile" ] && _system_performance_profile
+        [ "$1" = "clean" ] && _system_auto_clean
     else
         # 主交互逻辑
         while true; do
@@ -1056,7 +1056,7 @@ _run_container() {
     local port=$3
     local mount=$4
 
-    if [ -z $image ] || [ -z $name ] || [ -z $port ]; then
+    if [ -z "$image" ] || [ -z "$name" ] || [ -z "$port" ]; then
         red_echo "错误: 输入信息不能为空"
         red_echo "镜像 :$image | 名称: $name | 端口: $port"
         return 1
@@ -1101,7 +1101,7 @@ _export_container() {
 _import_image() {
     local image_id=$1
     local filepath=$2
-    if [ -z $image_id ] || [ -z $filepath ]; then
+    if [ -z "$image_id" ] || [ -z "$filepath" ]; then
         RED_echo "错误: 输入信息不能为空"
         return 1
     fi
