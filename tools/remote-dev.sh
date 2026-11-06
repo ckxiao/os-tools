@@ -9,6 +9,10 @@
 #   tools/remote-dev.sh shell [--test]   同步后打开交互式 shell（默认开发机）
 #   tools/remote-dev.sh exec [--test] -- <命令...>
 #   tools/remote-dev.sh sync  [--test]   只同步（默认开发机）
+#   tools/remote-dev.sh clean [--test]   清场：删除远端工作目录与测试容器
+#   tools/remote-dev.sh clean --all      两台机器都清
+#
+# 每次验证结束必须清场（clean），不在远端留下目录、容器或临时改动。
 #
 # 主机默认取 ssh 配置里的别名，可用环境变量覆盖：
 #   DSH_DEV_HOST   默认 dsh-dev
@@ -144,21 +148,60 @@ run_e2e() {
     ssh "${SSH_OPTS[@]}" "$host" "cd \"\$HOME/$REMOTE_DIR\" && docker run --rm -i -v \"\$PWD\":/w -w /w ubuntu:24.04 bash -c 'apt-get update -qq >/dev/null 2>&1; script -qec \"bash tests/e2e-debconf.sh\" /dev/null'" 2>&1 | tr -d '\r'
 }
 
+clean_host() {
+    local host="$1"
+    require_host "$host"
+    info "清理 $host:~/$REMOTE_DIR"
+    ssh "${SSH_OPTS[@]}" "$host" "
+        set -e
+        rm -rf \"\$HOME/$REMOTE_DIR\"
+        # 清理本轮测试可能留下的容器与镜像，避免占满磁盘
+        if command -v docker >/dev/null 2>&1; then
+            ids=\$(docker ps -aq --filter ancestor=ubuntu:24.04 2>/dev/null || true)
+            [ -n \"\$ids\" ] && docker rm -f \$ids >/dev/null 2>&1 || true
+        fi
+        echo '  - 工作目录已删除'
+    "
+}
+
+run_and_clean() {
+    local host="$1"
+    shift
+    local rc=0
+    "$@" "$host" || rc=$?
+    if [ "${DSH_KEEP:-0}" = "1" ]; then
+        info "保留远端目录：$host:~/$REMOTE_DIR（DSH_KEEP=1）"
+    else
+        clean_host "$host" >/dev/null 2>&1 || true
+        info "已清场：$host:~/$REMOTE_DIR"
+    fi
+    return "$rc"
+}
+
 main() {
     local cmd="${1:-}"
     shift || true
     case "$cmd" in
     check)
-        run_check "$(pick_host "${1:-}" test)"
+        run_and_clean "$(pick_host "${1:-}" test)" run_check
         ;;
     container)
-        run_container "$(pick_host "${1:-}" test)"
+        run_and_clean "$(pick_host "${1:-}" test)" run_container
         ;;
     e2e)
-        run_e2e "$(pick_host "${1:-}" test)"
+        run_and_clean "$(pick_host "${1:-}" test)" run_e2e
         ;;
     sync)
         sync_repo "$(pick_host "${1:-}" dev)"
+        ;;
+    clean)
+        if [[ "${1:-}" == "--all" ]]; then
+            clean_host "$DEV_HOST"
+            clean_host "$TEST_HOST"
+            info "两台机器均已清场"
+        else
+            clean_host "$(pick_host "${1:-}" test)"
+        fi
         ;;
     shell)
         local host
