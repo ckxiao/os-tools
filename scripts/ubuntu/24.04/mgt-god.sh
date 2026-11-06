@@ -7472,7 +7472,7 @@ OPS_SSH_KEY_MGMT() {
             read -p "请输入本次操作的用户名: " USERNAME
             read -p "如果第一次上传到成员服务器,请输入密码,如果是后续更新密码,请跳过(输入密码 | Enter跳过): " PASSD
             read -p "请输入成员服务器IP地址(空格分隔): " -a NODES
-            green_echo "输入信息为: $USERNAME | $(echo ${NODES[@]})  | $PASSD"
+            green_echo "输入信息为: $USERNAME | $(echo "${NODES[@]}")  | $PASSD"
             read -p "请确认操作(Y|N,default:Y): " areyouok
             areyouok="${areyouok:-Y}"
             [ "$areyouok" = "Y" ] && upload_key "${KEY_PATH:-"$HOME/.ssh/id_rsa.pub"}" "$USERNAME" "$PASSD" "${NODES[@]}"
@@ -7480,14 +7480,14 @@ OPS_SSH_KEY_MGMT() {
         3)
             read -p "请输入本次操作的用户名: " USERNAME
             read -p "请输入成员服务器IP地址(空格分隔): " -a NODES
-            green_echo "输入信息为: $USERNAME | $(echo ${NODES[@]}) "
+            green_echo "输入信息为: $USERNAME | $(echo "${NODES[@]}") "
             read -p "请确认操作(Y|N,default:Y): " areyouok
             areyouok="${areyouok:-Y}"
             [ "$areyouok" = "Y" ] && configure_sshd "$USERNAME" "${NODES[@]}"
             ;;
         4)
             read -p "请输入成员服务器IP地址(空格分隔): " -a NODES
-            green_echo "输入信息为: $(echo ${NODES[@]}) "
+            green_echo "输入信息为: $(echo "${NODES[@]}") "
             read -p "请确认操作(Y|N,default:Y): " areyouok
             areyouok="${areyouok:-Y}"
             [ "$areyouok" = "Y" ] && test_connection "${NODES[@]}"
@@ -9037,14 +9037,42 @@ scheduler_management() {
 
 k8s_image_operations() {
     if [ $# -gt 0 ]; then
-        [ $1 = "list" ] || [ $1 = "1" ] && $namespace=$2 && _k8s_list_images ${namespace:-"default"}
-        [ $1 = "pull" ] && image_name=$2 && $namespace=$3 && _k8s_pull_image ${namespace:-"default"} $image_name
-        [ $1 = "push" ] && image_name=$2 && $namespace=$3 && _k8s_push_image $image_name "${namespace:-"default"}"
-        [ $1 = "remove" ] && image_name=$2 && $namespace=$3 && _k8s_remove_image $image_name "${namespace:-"default"}"
-        [ $1 = "tag" ] && image_name=$2 && target_name=$3 && $namespace=$4 && _k8s_tag_image $image_name $target_image "${namespace:-"default"}"
-        [ $1 = "export" ] && image_name=$2 && output="${3:-"."}" && $namespace=$4 && _k8s_export_image "${output:-"."}" "${namespace:-"default"}"
-        [ $1 = "import" ] && filepath="${3:-"."}" && $namespace=$4 && _k8s_import_image "$image_file" "${namespace:-"default"}"
-
+        local image_name target_name output filepath
+        case "$1" in
+        list | 1)
+            _k8s_list_images "${2:-default}"
+            ;;
+        pull)
+            image_name="$2"
+            _k8s_pull_image "${3:-default}" "$image_name"
+            ;;
+        push)
+            image_name="$2"
+            _k8s_push_image "$image_name" "${3:-default}"
+            ;;
+        remove)
+            image_name="$2"
+            _k8s_remove_image "$image_name" "${3:-default}"
+            ;;
+        tag)
+            image_name="$2"
+            target_name="$3"
+            _k8s_tag_image "$image_name" "$target_name" "${4:-default}"
+            ;;
+        export)
+            image_name="$2"
+            output="${3:-.}"
+            _k8s_export_image "$image_name" "$output" "${4:-default}"
+            ;;
+        import)
+            filepath="$2"
+            _k8s_import_image "$filepath" "${3:-default}"
+            ;;
+        *)
+            echo "未知操作: $1（支持 list/pull/push/remove/tag/export/import）" >&2
+            return 2
+            ;;
+        esac
     else
         # 主交互逻辑
         while true; do
