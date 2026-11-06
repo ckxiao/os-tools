@@ -215,18 +215,24 @@ copy_with_mode() {
 
 sha256_file() {
     local file="$1"
+    local sum=""
+
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$file" | awk '{print $1}'
+        sum="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "$file" | awk '{print $1}'
+        sum="$(shasum -a 256 "$file" 2>/dev/null | awk '{print $1}')"
     elif command -v openssl >/dev/null 2>&1; then
-        openssl dgst -sha256 "$file" | awk '{print $NF}'
+        sum="$(openssl dgst -sha256 "$file" 2>/dev/null | awk '{print $NF}')"
     elif command -v certutil >/dev/null 2>&1; then
-        certutil -hashfile "$file" SHA256 2>/dev/null |
-            awk '/^[[:space:]]*[0-9a-fA-F]+[[:space:]]*$/ {gsub(/[[:space:]]/, ""); print tolower($0); exit}'
+        sum="$(certutil -hashfile "$file" SHA256 2>/dev/null |
+            awk '/^[[:space:]]*[0-9a-fA-F]+[[:space:]]*$/ {gsub(/[[:space:]]/, ""); print tolower($0); exit}')"
     else
         return 1
     fi
+
+    # GNU coreutils 在文件名含反斜杠(如 Windows 路径)或换行时，会在整行前加 '\' 转义，
+    # 直接取 $1 会把反斜杠当成哈希的一部分，导致校验恒失败
+    printf '%s' "${sum#\\}"
 }
 
 write_sha256_manifest() {
@@ -303,25 +309,26 @@ verify_file() {
     local file="$1"
     local relative_path="$2"
     local manifest="$3"
+    local quiet="${4:-0}"
     local expected actual
 
     [[ -f "$file" && -r "$manifest" ]] || {
-        warn "无法校验：$relative_path"
+        [ "$quiet" = "1" ] || warn "无法校验：$relative_path"
         return 1
     }
 
     expected="$(expected_sha256 "$manifest" "$relative_path")"
     if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
-        warn "校验清单中缺少：$relative_path"
+        [ "$quiet" = "1" ] || warn "校验清单中缺少：$relative_path"
         return 1
     fi
 
     actual="$(sha256_file "$file")" || {
-        warn "无法计算 SHA-256：$relative_path"
+        [ "$quiet" = "1" ] || warn "无法计算 SHA-256：$relative_path"
         return 1
     }
     if [[ "$actual" != "$expected" ]]; then
-        warn "SHA-256 校验失败：$relative_path"
+        [ "$quiet" = "1" ] || warn "SHA-256 校验失败：$relative_path"
         return 1
     fi
 }
@@ -378,6 +385,15 @@ verify_manifest_signature() {
     return 0
 }
 
+# 校验已安装文件时用哪份清单：优先远端（反映仓库最新状态），离线时回退到已安装清单
+active_manifest() {
+    if [[ -n "$REMOTE_MANIFEST" && -s "$REMOTE_MANIFEST" ]]; then
+        printf '%s' "$REMOTE_MANIFEST"
+    else
+        printf '%s' "$INSTALLED_MANIFEST"
+    fi
+}
+
 load_remote_manifest() {
     [[ -n "$BASE_URL" ]] || resolve_base_url
     ensure_work_dir
@@ -427,7 +443,8 @@ try_load_remote_catalog() {
 
     ensure_layout
     copy_with_mode 0644 "$tmp_catalog" "$INSTALLED_CATALOG"
-    copy_with_mode 0644 "$REMOTE_MANIFEST" "$INSTALLED_MANIFEST"
+    # 不在这里覆盖 INSTALLED_MANIFEST：它应当描述"已安装的文件"，
+    # 而不是仓库最新状态；否则离线时会拿新清单校验旧脚本，缓存直接失效
     CATALOG_PATH="$INSTALLED_CATALOG"
     return 0
 }
@@ -584,12 +601,14 @@ find_local_script() {
     fi
 
     if [[ -f "$installed_script" ]]; then
-        if [[ -f "$INSTALLED_MANIFEST" ]] &&
-            verify_file "$installed_script" "scripts/$os_path/$file" "$INSTALLED_MANIFEST"; then
+        local manifest
+        manifest="$(active_manifest)"
+        if [[ -f "$manifest" ]] &&
+            verify_file "$installed_script" "scripts/$os_path/$file" "$manifest" 1; then
             printf '%s' "$installed_script"
             return 0
         fi
-        warn "本地脚本校验失败或缺少清单，将重新下载：$file"
+        info "本地 $file 与仓库清单不一致（仓库已更新），重新下载"
     fi
     return 1
 }
@@ -657,12 +676,14 @@ find_local_runner() {
     fi
 
     if [[ -f "$installed_runner" ]]; then
-        if [[ -f "$INSTALLED_MANIFEST" ]] &&
-            verify_file "$installed_runner" "scripts/$os_path/$RUNNER_FILE" "$INSTALLED_MANIFEST"; then
+        local manifest
+        manifest="$(active_manifest)"
+        if [[ -f "$manifest" ]] &&
+            verify_file "$installed_runner" "scripts/$os_path/$RUNNER_FILE" "$manifest" 1; then
             printf '%s' "$installed_runner"
             return 0
         fi
-        warn "本地参数中间脚本校验失败或缺少清单，将重新下载：$RUNNER_FILE"
+        info "本地 $RUNNER_FILE 与仓库清单不一致（仓库已更新），重新下载"
     fi
     return 1
 }
@@ -703,8 +724,10 @@ find_local_extra() {
         return 0
     fi
 
-    if [[ -f "$installed" ]] && [[ -f "$INSTALLED_MANIFEST" ]] &&
-        verify_file "$installed" "scripts/$os_path/$extra" "$INSTALLED_MANIFEST"; then
+    local manifest
+    manifest="$(active_manifest)"
+    if [[ -f "$installed" ]] && [[ -f "$manifest" ]] &&
+        verify_file "$installed" "scripts/$os_path/$extra" "$manifest" 1; then
         return 0
     fi
     return 1
@@ -724,8 +747,13 @@ ensure_extra() {
     ensure_work_dir
 
     tmp_file="$WORK_DIR/$extra"
-    download_raw "$relative_path" "$tmp_file" 2>/dev/null || return 0
-    if ! verify_file "$tmp_file" "$relative_path" "$REMOTE_MANIFEST" 2>/dev/null; then
+    info "同步附属文件：scripts/$os_path/$extra"
+    if ! download_raw "$relative_path" "$tmp_file" 2>/dev/null; then
+        # 该 OS 目录可能没有这个附属文件，交由调用方按需报错
+        warn "无法获取附属文件（远端可能不存在）：$relative_path"
+        return 0
+    fi
+    if ! verify_file "$tmp_file" "$relative_path" "$REMOTE_MANIFEST"; then
         warn "附属文件校验失败：$relative_path"
         return 1
     fi

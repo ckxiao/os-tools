@@ -262,7 +262,7 @@ test_manifest_pin_accepts_match_and_rejects_mismatch() {
     tmp="$(mktemp -d)"
     manifest="$tmp/SHA256SUMS"
     printf 'dummy\n' >"$manifest"
-    good="$(sha256sum "$manifest" | awk '{print $1}')"
+    good="$(sha256sum "$manifest" | awk '{print $1}' | sed 's/^\\//')"
 
     run_cmd bash -c 'source "$1"; DSH_TOOLS_EXPECTED_SHA256="$2" verify_manifest_pin "$3"' \
         _ "$MENU" "$good" "$manifest"
@@ -347,6 +347,23 @@ test_no_unquoted_test_operands() {
         return 1
     fi
     return 0
+}
+
+test_sha256_file_strips_escape_prefix() {
+    local shim out want
+    want="abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    shim="$(mktemp -d)"
+    # 模拟 GNU coreutils 在文件名含反斜杠(Windows 路径)时给整行加 '\' 的行为
+    cat >"$shim/sha256sum" <<SHIM
+#!/usr/bin/env bash
+printf '\\\\${want} *file\n'
+SHIM
+    chmod +x "$shim/sha256sum"
+
+    out="$(PATH="$shim:$PATH" bash -c '. "$1"; sha256_file /tmp/whatever' test "$MENU" 2>&1)"
+    rm -rf "$shim"
+
+    assert_eq "$want" "$out"
 }
 
 # ---------------------------------------------------------------- 运行

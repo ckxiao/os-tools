@@ -233,6 +233,14 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 
 ## 常见问题
 
+**运行时提示「本地 xxx 与仓库清单不一致（仓库已更新），重新下载」？**
+
+正常现象。菜单每次启动会拉取最新的 `SHA256SUMS`，若本地缓存脚本落后于清单，会自动重新下载并校验，只输出一条信息级提示，不影响执行。仓库无变更时不会重复下载。
+
+**`SHA256SUMS` 里的文件名前面有 `*`？**
+
+那是 GNU coreutils 的二进制模式标记，`menu.sh` 解析时会剥掉，`sha256sum -c` 也能正常识别，无需处理。
+
 **初始化过程中卡在键盘/时区选择框？**
 
 旧版本没有关闭 debconf 前台，`apt upgrade` 升级 `keyboard-configuration` 或 `tzdata` 时会弹出 TUI 对话框。现在所有脚本统一使用 `apt_get` 包装器：
