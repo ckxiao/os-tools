@@ -64,6 +64,10 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
         └── 24.04/
             ├── common.sh
             ├── run.sh
+            ├── users.sh
+            ├── network.sh
+            ├── service.sh
+            ├── container.sh
             ├── k8s.sh
             ├── init-os.sh
             ├── init_docker.sh
@@ -211,7 +215,17 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 | `start_stopped_containers` | 启动处于 Exited / Created 状态的容器 |
 | `run_step` | 幂等执行：成功后写入 `/var/lib/dsh-tools/state/<name>.done`，重跑自动跳过 |
 
-`k8s.sh` 是从 `mgt-god.sh` 拆出的 K8S 子模块（114 个函数，约 2400 行），由 `mgt-god.sh` 在启动时 source。子模块缺失时只有 K8S 菜单不可用，其余模块不受影响。
+`k8s.sh` 等子模块是从 `mgt-god.sh` 按功能拆出的，由它在启动时按需 source：
+
+| 子模块 | 行数 | 对应菜单 |
+| --- | --- | --- |
+| `users.sh` | ~1260 | 1) 用户管理 |
+| `network.sh` | ~930 | 3) 网络管理、10) 防火墙管理 |
+| `service.sh` | ~1170 | 6) 服务管理 |
+| `container.sh` | ~1430 | 9) 容器管理 |
+| `k8s.sh` | ~2480 | 17) K8S 管理 |
+
+拆分后 `mgt-god.sh` 从 11288 行降到约 4160 行。任一子模块缺失时只有对应菜单不可用（会给出明确提示），其余模块不受影响。附属文件清单集中在 `menu.sh` 的 `EXTRA_FILES`，下载、校验、安装与 CI 检查都从这一处派生。
 
 可覆盖的环境变量：`DSH_TOOLS_APT_MIRROR`、`DSH_TOOLS_DOCKER_REPO`、`DSH_TOOLS_DOCKER_MIRRORS`、`DSH_TOOLS_MIRROR_PROBE=0`（关闭镜像探测）、`DSH_STATE_DIR`、`DSH_LOG_DIR`；`DSH_TOOLS_FORCE=1` 可忽略状态标记强制重跑。
 

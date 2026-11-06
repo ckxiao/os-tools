@@ -19,7 +19,7 @@ readonly DEFAULT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dsh-os-tools"
 # 每个 OS 版本目录下的参数中间脚本，负责参数声明、采集与校验
 readonly RUNNER_FILE="run.sh"
 # 原子脚本的附属文件：共享库与被 source 的子模块
-readonly EXTRA_FILES=("common.sh" "k8s.sh")
+readonly EXTRA_FILES=("common.sh" "users.sh" "network.sh" "service.sh" "container.sh" "k8s.sh")
 
 INSTALL_DIR="${DSH_TOOLS_HOME:-$DEFAULT_INSTALL_DIR}"
 CONFIG_DIR="${DSH_TOOLS_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"

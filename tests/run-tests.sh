@@ -197,7 +197,23 @@ test_catalog_references_exist() {
         [[ -z "${pid//[[:space:]]/}" || "$pid" == \#* ]] && continue
         assert_file_exists "$ROOT/scripts/$os_path/$file" || return 1
         assert_file_exists "$ROOT/scripts/$os_path/run.sh" || return 1
-        assert_file_exists "$ROOT/scripts/$os_path/common.sh" || return 1
+    done <"$CATALOG"
+    return 0
+}
+
+test_extra_files_declared_in_menu_exist() {
+    local line extras extra os_path
+    line="$(grep -m1 '^readonly EXTRA_FILES=' "$MENU")" || {
+        echo "    menu.sh 中未找到 EXTRA_FILES 声明"
+        return 1
+    }
+    extras="$(sed -E 's/^readonly EXTRA_FILES=\((.*)\)$/\1/' <<<"$line" | tr -d '"')"
+
+    while IFS='|' read -r _pid _f _v os_path _t _sid _file _rest; do
+        [[ -z "${_pid//[[:space:]]/}" || "$_pid" == \#* ]] && continue
+        for extra in $extras; do
+            assert_file_exists "$ROOT/scripts/$os_path/$extra" || return 1
+        done
     done <"$CATALOG"
     return 0
 }

@@ -27,9 +27,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          helpers="$(sed -nE 's/^readonly EXTRA_FILES=\((.*)\)$/\1/p' menu.sh | tr -d '"')"
+          [[ -n "$helpers" ]] || {
+            echo "menu.sh 中未声明 EXTRA_FILES"
+            exit 1
+          }
+          echo "声明附属文件：$helpers"
           for file in scripts/*/*/*.sh; do
             dir="$(dirname "$file")"
-            for helper in common.sh k8s.sh; do
+            for helper in $helpers; do
               [[ "$file" == *"/$helper" ]] && continue
               if grep -q "$helper" "$file"; then
                 [[ -f "$dir/$helper" ]] || {
