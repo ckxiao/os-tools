@@ -6944,9 +6944,9 @@ _exec_command() {
 
 # 导出容器为tar文件
 _export_container() {
-    $container_id=$1
-    $filepath=$2
-    if [ -z $container_id] || [ -z $filepath]; then
+    local container_id="$1"
+    local filepath="$2"
+    if [ -z "$container_id" ] || [ -z "$filepath" ]; then
         RED_echo "错误: 输入信息不能为空"
         return 1
     fi
