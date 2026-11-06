@@ -18,8 +18,8 @@ readonly DEFAULT_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dsh-os-tools"
 readonly DEFAULT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dsh-os-tools"
 # 每个 OS 版本目录下的参数中间脚本，负责参数声明、采集与校验
 readonly RUNNER_FILE="run.sh"
-# 每个 OS 版本目录下的共享库，被原子脚本 source
-readonly COMMON_FILE="common.sh"
+# 原子脚本的附属文件：共享库与被 source 的子模块
+readonly EXTRA_FILES=("common.sh" "k8s.sh")
 
 INSTALL_DIR="${DSH_TOOLS_HOME:-$DEFAULT_INSTALL_DIR}"
 CONFIG_DIR="${DSH_TOOLS_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
@@ -104,6 +104,11 @@ $APP_NAME $APP_VERSION
   DSH_TOOLS_ALLOW_HTTP=1
                       允许 HTTP；仅建议用于可信内网
   DSH_BASH           显式指定 Bash 可执行文件（可选）
+  DSH_TOOLS_EXPECTED_SHA256
+                      固定 SHA256SUMS 的哈希，防止下载源被整体替换
+  DSH_TOOLS_REQUIRE_SIG=1
+                      强制校验 SHA256SUMS.sig（GPG 分离签名）
+  DSH_TOOLS_GPG_HOME  GPG 密钥环目录（可选）
 EOF
 }
 
@@ -321,6 +326,58 @@ verify_file() {
     fi
 }
 
+# 与预先固定的清单哈希比对，防止下载源整体被替换（TOFU 加固）
+verify_manifest_pin() {
+    local manifest="$1"
+    local expected="${DSH_TOOLS_EXPECTED_SHA256:-}"
+    local actual
+
+    [[ -n "$expected" ]] || return 0
+
+    actual="$(sha256_file "$manifest")" || {
+        warn "无法计算 SHA256SUMS 的哈希"
+        return 1
+    }
+
+    if [[ "${actual,,}" != "${expected,,}" ]]; then
+        warn "SHA256SUMS 与预期的固定哈希不一致"
+        warn "  预期：$expected"
+        warn "  实际：$actual"
+        return 1
+    fi
+    success "SHA256SUMS 哈希与预期一致"
+    return 0
+}
+
+# 可选的 GPG 分离签名校验；仅当 DSH_TOOLS_REQUIRE_SIG=1 时强制
+verify_manifest_signature() {
+    local manifest="$1"
+    local sig_file="${manifest}.sig"
+    local -a gpg_args=(--batch --verify)
+
+    [[ "${DSH_TOOLS_REQUIRE_SIG:-0}" == "1" ]] || return 0
+
+    require_command gpg
+
+    if [[ ! -s "$sig_file" ]]; then
+        download_raw "SHA256SUMS.sig" "$sig_file" 2>/dev/null || true
+    fi
+    if [[ ! -s "$sig_file" ]]; then
+        warn "已启用强制签名校验，但未获取到 SHA256SUMS.sig"
+        return 1
+    fi
+
+    [[ -n "${DSH_TOOLS_GPG_HOME:-}" ]] && gpg_args+=(--homedir "$DSH_TOOLS_GPG_HOME")
+
+    if ! gpg "${gpg_args[@]}" "$sig_file" "$manifest" >/dev/null 2>&1; then
+        warn "SHA256SUMS 签名校验失败"
+        return 1
+    fi
+
+    success "SHA256SUMS 签名校验通过"
+    return 0
+}
+
 load_remote_manifest() {
     [[ -n "$BASE_URL" ]] || resolve_base_url
     ensure_work_dir
@@ -330,6 +387,10 @@ load_remote_manifest() {
             return 1
     fi
     [[ -s "$REMOTE_MANIFEST" ]] || return 1
+
+    verify_manifest_pin "$REMOTE_MANIFEST" || return 1
+    verify_manifest_signature "$REMOTE_MANIFEST" || return 1
+    return 0
 }
 
 load_catalog_file() {
@@ -631,44 +692,57 @@ ensure_runner() {
     printf '%s' "$destination"
 }
 
-# 查找已安装且校验通过的共享库
-find_local_common() {
+# 查找已安装且校验通过的附属文件
+find_local_extra() {
     local os_path="$1"
-    local source_file="$SOURCE_DIR/scripts/$os_path/$COMMON_FILE"
-    local installed="$SCRIPT_DIR/$os_path/$COMMON_FILE"
+    local extra="$2"
+    local source_file="$SOURCE_DIR/scripts/$os_path/$extra"
+    local installed="$SCRIPT_DIR/$os_path/$extra"
 
     if is_local_bundle && [[ -f "$source_file" ]]; then
         return 0
     fi
 
     if [[ -f "$installed" ]] && [[ -f "$INSTALLED_MANIFEST" ]] &&
-        verify_file "$installed" "scripts/$os_path/$COMMON_FILE" "$INSTALLED_MANIFEST"; then
+        verify_file "$installed" "scripts/$os_path/$extra" "$INSTALLED_MANIFEST"; then
         return 0
     fi
     return 1
 }
 
-# 确保共享库就绪；远端没有该文件时视为可选，直接放行
-ensure_common() {
+# 确保某个附属文件就绪；远端没有该文件时视为可选，直接放行
+ensure_extra() {
     local os_path="$1"
-    local relative_path="scripts/$os_path/$COMMON_FILE"
-    local destination="$SCRIPT_DIR/$os_path/$COMMON_FILE"
+    local extra="$2"
+    local relative_path="scripts/$os_path/$extra"
+    local destination="$SCRIPT_DIR/$os_path/$extra"
     local tmp_file
 
-    find_local_common "$os_path" && return 0
+    find_local_extra "$os_path" "$extra" && return 0
     [[ -n "$BASE_URL" ]] || return 0
     load_remote_manifest 2>/dev/null || return 0
     ensure_work_dir
 
-    tmp_file="$WORK_DIR/$COMMON_FILE"
+    tmp_file="$WORK_DIR/$extra"
     download_raw "$relative_path" "$tmp_file" 2>/dev/null || return 0
     if ! verify_file "$tmp_file" "$relative_path" "$REMOTE_MANIFEST" 2>/dev/null; then
-        warn "共享库校验失败：$relative_path"
+        warn "附属文件校验失败：$relative_path"
         return 1
     fi
 
     mkdir -p -- "$(dirname -- "$destination")"
     copy_with_mode 0644 "$tmp_file" "$destination"
+    return 0
+}
+
+# 确保该 OS 版本目录下所有已声明的附属文件就绪
+ensure_extras() {
+    local os_path="$1"
+    local extra
+
+    for extra in "${EXTRA_FILES[@]}"; do
+        ensure_extra "$os_path" "$extra" || return 1
+    done
     return 0
 }
 
@@ -699,7 +773,7 @@ run_tool() {
     parse_script_entry "$entry"
 
     script_path="$(ensure_script "$ENTRY_PROFILE" "$ENTRY_OS_PATH" "$ENTRY_FILE")"
-    ensure_common "$ENTRY_OS_PATH" || fail "共享库准备失败：$ENTRY_OS_PATH/$COMMON_FILE"
+    ensure_extras "$ENTRY_OS_PATH" || fail "附属文件准备失败：$ENTRY_OS_PATH"
     confirm_run "$ENTRY_TITLE" "$ENTRY_RISK" || {
         info "已取消"
         return 0
@@ -728,7 +802,7 @@ run_tool() {
 
 install_profile_from_source() {
     local wanted_profile="$1"
-    local line id os_path file count=0 one_path runner common
+    local line id os_path file count=0 one_path runner extra aux
     local -a os_paths=()
     for line in "${CATALOG_ROWS[@]}"; do
         IFS='|' read -r id _ _ os_path _ _ file _ _ _ _ _ <<<"$line"
@@ -754,13 +828,15 @@ install_profile_from_source() {
             warn "源码中缺少参数中间脚本：scripts/$one_path/$RUNNER_FILE"
         fi
 
-        common="$SOURCE_DIR/scripts/$one_path/$COMMON_FILE"
-        if [[ -f "$common" ]]; then
-            syntax_check "$common" || fail "语法检查失败：scripts/$one_path/$COMMON_FILE"
-            copy_with_mode 0644 "$common" "$SCRIPT_DIR/$one_path/$COMMON_FILE"
-        else
-            warn "源码中缺少共享库：scripts/$one_path/$COMMON_FILE"
-        fi
+        for extra in "${EXTRA_FILES[@]}"; do
+            aux="$SOURCE_DIR/scripts/$one_path/$extra"
+            if [[ -f "$aux" ]]; then
+                syntax_check "$aux" || fail "语法检查失败：scripts/$one_path/$extra"
+                copy_with_mode 0644 "$aux" "$SCRIPT_DIR/$one_path/$extra"
+            else
+                warn "源码中缺少附属文件：scripts/$one_path/$extra"
+            fi
+        done
     done
 
     copy_with_mode 0755 "$SOURCE_DIR/menu.sh" "$INSTALL_DIR/menu.sh"
@@ -774,7 +850,7 @@ install_profile_from_source() {
 
 install_profile_from_remote() {
     local wanted_profile="$1"
-    local line id os_path file relative_path runner_relative common_relative one_path count=0
+    local line id os_path file relative_path runner_relative extra extra_relative one_path count=0
     local stage_dir
     local -a os_paths=()
 
@@ -818,15 +894,17 @@ install_profile_from_remote() {
                 rm -f -- "$stage_dir/$runner_relative"
             fi
 
-            # 共享库缺失时静默跳过（部分 OS 目录可能没有）
-            common_relative="scripts/$os_path/$COMMON_FILE"
-            if download_raw "$common_relative" "$stage_dir/$common_relative" 2>/dev/null &&
-                verify_file "$stage_dir/$common_relative" "$common_relative" "$REMOTE_MANIFEST" 2>/dev/null &&
-                syntax_check "$stage_dir/$common_relative" 2>/dev/null; then
-                :
-            else
-                rm -f -- "$stage_dir/$common_relative"
-            fi
+            # 附属文件缺失时静默跳过（部分 OS 目录可能没有）
+            for extra in "${EXTRA_FILES[@]}"; do
+                extra_relative="scripts/$os_path/$extra"
+                if download_raw "$extra_relative" "$stage_dir/$extra_relative" 2>/dev/null &&
+                    verify_file "$stage_dir/$extra_relative" "$extra_relative" "$REMOTE_MANIFEST" 2>/dev/null &&
+                    syntax_check "$stage_dir/$extra_relative" 2>/dev/null; then
+                    :
+                else
+                    rm -f -- "$stage_dir/$extra_relative"
+                fi
+            done
         fi
         ((count += 1))
     done
@@ -850,10 +928,12 @@ install_profile_from_remote() {
             copy_with_mode 0755 "$stage_dir/scripts/$one_path/$RUNNER_FILE" \
                 "$SCRIPT_DIR/$one_path/$RUNNER_FILE"
         fi
-        if [[ -f "$stage_dir/scripts/$one_path/$COMMON_FILE" ]]; then
-            copy_with_mode 0644 "$stage_dir/scripts/$one_path/$COMMON_FILE" \
-                "$SCRIPT_DIR/$one_path/$COMMON_FILE"
-        fi
+        for extra in "${EXTRA_FILES[@]}"; do
+            if [[ -f "$stage_dir/scripts/$one_path/$extra" ]]; then
+                copy_with_mode 0644 "$stage_dir/scripts/$one_path/$extra" \
+                    "$SCRIPT_DIR/$one_path/$extra"
+            fi
+        done
     done
 
     success "已安装 $count 个脚本：$wanted_profile"
@@ -1095,4 +1175,7 @@ main() {
     profile_menu
 }
 
-main "$@"
+# 仅在被直接执行时进入主流程；被 source 时只加载函数，便于测试
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

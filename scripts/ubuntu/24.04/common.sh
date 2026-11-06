@@ -121,12 +121,50 @@ EOF
 
 # ---------------------------------------------------------------- Docker
 
+# 探测镜像加速器可用性，结果写入 REACHABLE_DOCKER_MIRRORS（逗号分隔）
+# 逐个请求 /v2/ 端点，200/401/403 视为可用；全部不可达时保留原列表
+probe_docker_mirrors() {
+    local -a candidates=()
+    local -a reachable=()
+    local mirror code
+
+    if [ "${DSH_TOOLS_MIRROR_PROBE:-1}" = "0" ] || ! has_command curl; then
+        REACHABLE_DOCKER_MIRRORS="$DOCKER_REGISTRY_MIRRORS"
+        return 0
+    fi
+
+    IFS=',' read -r -a candidates <<<"$DOCKER_REGISTRY_MIRRORS"
+    for mirror in "${candidates[@]}"; do
+        [ -z "$mirror" ] && continue
+        mirror="${mirror%/}"
+        code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$mirror/v2/" 2>/dev/null)"
+        case "$code" in
+        200 | 401 | 403) reachable+=("$mirror") ;;
+        esac
+    done
+
+    if [ ${#reachable[@]} -eq 0 ]; then
+        yellow_echo "镜像加速器探测全部失败，保留原列表（共 ${#candidates[@]} 个）"
+        REACHABLE_DOCKER_MIRRORS="$DOCKER_REGISTRY_MIRRORS"
+        return 0
+    fi
+
+    green_echo "镜像加速器探测通过 ${#reachable[@]}/${#candidates[@]} 个"
+    local csv=""
+    for mirror in "${reachable[@]}"; do
+        csv+="${csv:+,}$mirror"
+    done
+    REACHABLE_DOCKER_MIRRORS="$csv"
+    return 0
+}
+
 # 配置 /etc/docker/daemon.json 的镜像加速器
 configure_docker_mirrors() {
     local -a mirrors=()
     local mirror body=""
 
-    IFS=',' read -r -a mirrors <<<"$DOCKER_REGISTRY_MIRRORS"
+    probe_docker_mirrors
+    IFS=',' read -r -a mirrors <<<"${REACHABLE_DOCKER_MIRRORS:-$DOCKER_REGISTRY_MIRRORS}"
     for mirror in "${mirrors[@]}"; do
         [ -z "$mirror" ] && continue
         body+="    \"$mirror\","$'\n'

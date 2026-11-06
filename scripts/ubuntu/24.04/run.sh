@@ -166,10 +166,6 @@ load_spec() {
             "DNS 地址，留空则使用网关（例如 223.5.5.5）" \
             optional "" validate_dns
         ;;
-    opt.sh)
-        # getopts 示例脚本，需要 -h/-a 形式的选项，由调用方直接给出
-        PARAM_MODE="passthrough"
-        ;;
     mgt-god.sh)
         # 无参进入交互菜单；带参时按 `函数名 [参数...]` 直接调用
         PARAM_MODE="passthrough"

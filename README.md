@@ -29,14 +29,14 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
   --install-profile
 ```
 
-按编号运行单个脚本（示例为 `7` 号 `opt.sh`）：
+按编号运行单个脚本（示例为 `6` 号 `mgt-god.sh`，参数按 `函数名 [参数...]` 透传）：
 
 ```bash
 BASE_URL="https://raw.githubusercontent.com/ckxiao/os-tools/main"
 bash <(curl -fsSL "$BASE_URL/menu.sh") \
   --set-base-url "$BASE_URL" \
   --profile ubuntu-24.04 \
-  --run 7 -h example -a demo
+  --run 6 check_disk_usage
 ```
 
 需要 `init-os.sh` 时，把参数接在 `--run 1` 之后：
@@ -57,18 +57,20 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
 ├── catalog.tsv
 ├── SHA256SUMS
 ├── README.md
+├── tests/
+│   └── run-tests.sh
 └── scripts/
     └── ubuntu/
         └── 24.04/
             ├── common.sh
             ├── run.sh
+            ├── k8s.sh
             ├── init-os.sh
             ├── init_docker.sh
             ├── init_llm.sh
             ├── init_dify.sh
             ├── hardening-os.sh
-            ├── mgt-god.sh
-            └── opt.sh
+            └── mgt-god.sh
 ```
 
 脚本路径统一为：
@@ -77,7 +79,7 @@ bash <(curl -fsSL "$BASE_URL/menu.sh") \
 scripts/<os>/<version>/<script>.sh
 ```
 
-每个版本目录下有两个非原子脚本：参数中间脚本 `run.sh`（见下文「参数中间脚本」）与共享库 `common.sh`（见下文「共享库」）。两者都不列入 `catalog.tsv`，也不出现在菜单的脚本列表中。
+每个版本目录下有三个非原子文件：参数中间脚本 `run.sh`（见「参数中间脚本」）、共享库 `common.sh`（见「共享库」）与子模块 `k8s.sh`。三者都不列入 `catalog.tsv`，也不出现在菜单的脚本列表中，但会随原子脚本一起下载并校验。
 
 以后增加其他系统时，直接增加版本目录：
 
@@ -98,7 +100,7 @@ scripts/kylin/v10/
 
 1. 主菜单选择操作系统及版本。
 2. 二级菜单通过编号选择脚本。
-3. 仅在选中脚本后下载对应文件（含该版本的 `run.sh`）。
+3. 仅在选中脚本后下载对应文件（含该版本的 `run.sh`、`common.sh`、`k8s.sh`）。
 4. 下载文件必须通过 `SHA256SUMS` 和 `bash -n` 检查。
 5. 已安装且校验通过的脚本会直接复用。
 6. 脚本所需参数由 `run.sh` 采集与校验，通过后才执行。
@@ -139,15 +141,21 @@ https://ckxiao.github.io/os-tools
 sha256sum menu.sh catalog.tsv README.md scripts/*/*/*.sh > SHA256SUMS
 ```
 
-`scripts/*/*/*.sh` 已包含各版本的 `run.sh` 与 `common.sh`，无需单独处理。
+`scripts/*/*/*.sh` 已包含各版本的 `run.sh`、`common.sh`、`k8s.sh`，无需单独处理。
 
 仓库通过 `.gitattributes` 强制所有文本文件使用 LF 行尾。本仓库在 Windows 上维护、在 Linux 上执行，若检出为 CRLF，`bash` 会因 shebang 失败而无法运行脚本，且 `SHA256SUMS` 校验也会不一致。
 
-GitHub Actions 会检查 Shell 语法、`catalog.tsv` 引用、各版本 `run.sh` 的参数覆盖，以及 `SHA256SUMS` 是否与当前文件一致。
+本地验证：
+
+```bash
+bash tests/run-tests.sh        # 21 个用例，零依赖，Windows/Linux 均可
+```
+
+GitHub Actions 会依次检查：Shell 语法、被 source 的附属文件是否存在、`catalog.tsv` 字段数与引用、`shellcheck --severity=error`、`tests/run-tests.sh`、`SHA256SUMS` 一致性。
 
 ## 参数中间脚本
 
-原子脚本中只有 `init-os.sh` 需要位置参数；其余脚本无位置参数，或按自身语法接收参数（`mgt-god.sh` 为 `函数名 [参数...]`，`opt.sh` 为 `-h/-a` 选项）。
+原子脚本中只有 `init-os.sh` 需要位置参数，`hardening-os.sh` 使用选项参数；其余脚本无参数，或按自身语法接收参数（`mgt-god.sh` 为 `函数名 [参数...]`）。
 
 为了把「参数知识」放在与脚本相同的 OS 版本目录内，而不是硬编码进 `menu.sh`，每个版本目录提供一个 `run.sh`：
 
@@ -176,7 +184,6 @@ bash scripts/ubuntu/24.04/run.sh --collect init-os.sh node01 192.168.1.20/24 223
 | `hardening-os.sh` | `--ssh-port`、`--allow-hosts`、`--ops-user` | 选项参数。不传 `--allow-hosts` 则不写来源白名单；端口默认 22，运维账号默认 `ck` |
 | `init_docker.sh` / `init_llm.sh` / `init_dify.sh` | 无 | 配置项通过环境变量覆盖，见各脚本 `--help` |
 | `mgt-god.sh` | 原样透传 | `函数名 [参数...]`，无参进入交互菜单 |
-| `opt.sh` | 原样透传 | `-h` / `-a` 示例选项 |
 
 `--collect` 同时接受两种入参形式，输出统一为「每行一个 token」：
 
@@ -190,7 +197,7 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 
 新增 OS 版本时，除了放脚本和登记 `catalog.tsv`，还需提供该版本目录下的 `run.sh`；缺失时 `menu.sh` 会降级为「原始参数直接透传」并给出警告。
 
-## 共享库
+## 共享库与子模块
 
 `common.sh` 存放被多个原子脚本复用的逻辑，避免同一段代码复制多份：
 
@@ -200,10 +207,13 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 | `green_echo` / `red_echo` / `yellow_echo` | 统一日志输出，非交互终端时自动跳过 sleep |
 | `ensure_apt_mirror` | 按 `/etc/os-release` 的代号生成 APT 源并刷新索引 |
 | `install_docker` | 安装 Docker CE、配置镜像加速器、把调用者加入 docker 组 |
+| `probe_docker_mirrors` | 逐个探测镜像加速器的 `/v2/` 端点，自动剔除不可达项 |
 | `start_stopped_containers` | 启动处于 Exited / Created 状态的容器 |
 | `run_step` | 幂等执行：成功后写入 `/var/lib/dsh-tools/state/<name>.done`，重跑自动跳过 |
 
-可覆盖的环境变量：`DSH_TOOLS_APT_MIRROR`、`DSH_TOOLS_DOCKER_REPO`、`DSH_TOOLS_DOCKER_MIRRORS`、`DSH_STATE_DIR`、`DSH_LOG_DIR`；`DSH_TOOLS_FORCE=1` 可忽略状态标记强制重跑。
+`k8s.sh` 是从 `mgt-god.sh` 拆出的 K8S 子模块（114 个函数，约 2400 行），由 `mgt-god.sh` 在启动时 source。子模块缺失时只有 K8S 菜单不可用，其余模块不受影响。
+
+可覆盖的环境变量：`DSH_TOOLS_APT_MIRROR`、`DSH_TOOLS_DOCKER_REPO`、`DSH_TOOLS_DOCKER_MIRRORS`、`DSH_TOOLS_MIRROR_PROBE=0`（关闭镜像探测）、`DSH_STATE_DIR`、`DSH_LOG_DIR`；`DSH_TOOLS_FORCE=1` 可忽略状态标记强制重跑。
 
 `common.sh` 不能直接执行（会报错退出），只能被同目录下的脚本 `source`。菜单在下载原子脚本时会一并下载并校验该文件。
 
@@ -215,4 +225,7 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 - 此前版本中 `/etc/shadow` 被设为 `755`、`/tmp` 丢失 sticky bit、`common-account` 规则被误写入 `sshd_config` 等问题已修复。
 - `mgt-god.sh` 包含删除、清空、Docker prune、Kubernetes 删除类操作，应以 root 权限严格审核运行。
 - `init_llm.sh` 会把 Ollama 的 `11434/TCP` 对外开放，建议增加认证、反向代理、网络 ACL 或限制来源。
-- GitHub Raw 和 SHA-256 校验可以保证文件一致性，但仓库维护者账号仍需启用强认证；重要环境应固定 commit SHA，而不是始终使用 `main`。
+- GitHub Raw 和 SHA-256 校验只能保证「下载到的内容与清单一致」，而清单与脚本同源，本身仍是 TOFU 模型。重要环境建议叠加以下任一项：
+  - 把 `BASE_URL` 固定到某个 commit SHA；
+  - 设置 `DSH_TOOLS_EXPECTED_SHA256=<SHA256SUMS 的 sha256>`，清单被替换时会直接失败；
+  - 用 GPG 生成 `SHA256SUMS.sig`（`gpg --armor --detach-sign --output SHA256SUMS.sig SHA256SUMS`），并在客户端设置 `DSH_TOOLS_REQUIRE_SIG=1` 强制验签。

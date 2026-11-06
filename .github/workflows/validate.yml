@@ -23,18 +23,21 @@ jobs:
             bash -n "$file"
           done
 
-      - name: Check shared library presence
+      - name: Check sourced helpers presence
         shell: bash
         run: |
           set -euo pipefail
           for file in scripts/*/*/*.sh; do
-            if grep -q 'common\.sh' "$file"; then
-              dir="$(dirname "$file")"
-              [[ -f "$dir/common.sh" ]] || {
-                echo "$file references common.sh but $dir/common.sh is missing"
-                exit 1
-              }
-            fi
+            dir="$(dirname "$file")"
+            for helper in common.sh k8s.sh; do
+              [[ "$file" == *"/$helper" ]] && continue
+              if grep -q "$helper" "$file"; then
+                [[ -f "$dir/$helper" ]] || {
+                  echo "$file references $helper but $dir/$helper is missing"
+                  exit 1
+                }
+              fi
+            done
           done
 
       - name: Check catalog field count
@@ -57,7 +60,11 @@ jobs:
             echo "shellcheck 未安装，跳过"
             exit 0
           fi
-          shellcheck --severity=error --shell=bash menu.sh scripts/*/*/*.sh
+          shellcheck --severity=error --shell=bash menu.sh tests/run-tests.sh scripts/*/*/*.sh
+
+      - name: Run tests
+        shell: bash
+        run: bash tests/run-tests.sh
 
       - name: Check catalog references
         shell: bash
