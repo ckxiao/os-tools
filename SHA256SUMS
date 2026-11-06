@@ -4,7 +4,7 @@ ce326916066fc9aa4f80717fc68b3b4916a5ca34c6e44b2a09a63558e3c87abc *README.md
 2047072a24918c99156c418afdbf4038277a64c8fd52fdc525dedfd1960d08c3 *scripts/ubuntu/24.04/common.sh
 c9b00f3ed53dceb6c8d201b78b3a3d13e1163df6a800b1a5fdb8077da50d2058 *scripts/ubuntu/24.04/container.sh
 4b49adba8d8d6825c7779fb704ec1e5abbbda00c647b649044d26cf82b81592d *scripts/ubuntu/24.04/hardening-os.sh
-6794ea19f41f2ce8c081bc090eb4b0e9bc96b4ab81e6a9a7b1c9b961d597af27 *scripts/ubuntu/24.04/init-os.sh
+69258dc4161ea89a419756c928e35b9450a09ff7c6c19765ccaac64d88602d9c *scripts/ubuntu/24.04/init-os.sh
 9fc7573f713a35755eee79b339e733eba9cbe219d4fcf2faa2556541971449bf *scripts/ubuntu/24.04/init_dify.sh
 7540d823bf2bd85c7147935cd3b4c68b738a2526f1f1b922c34e125d4b8e36dc *scripts/ubuntu/24.04/init_docker.sh
 9ccc3b5ebc9c777d7eb9da44f919c75ec9fb8b3e49cbe18d8ee478afaa7a74c1 *scripts/ubuntu/24.04/init_llm.sh

@@ -65,8 +65,16 @@ function set_ip_static {
 
     echo "Starting Set Static IP Address:--------------------------------------"
 
-    # 获取当前网络接口名称
-    CN=$(ls /sys/class/net | grep -v lo | grep -v docker0 | head -n 1)
+    # 优先选择默认路由所在网卡；多网卡机器上按字母序取第一个会配错接口导致失联
+    CN=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+    if [ -z "$CN" ]; then
+        CN=$(ls /sys/class/net | grep -vE '^(lo|docker0|veth|br-)' | head -n 1)
+        echo "未检测到默认路由，回退到第一个非虚拟网卡: ${CN:-<none>}"
+    fi
+    if [ -z "$CN" ]; then
+        red_echo "无法识别可用网卡，已放弃修改网络配置"
+        return 1
+    fi
 
     if [ -z "$IP" ]; then
         echo "IP input args is null, will use current IP address to set static IP address"
@@ -85,7 +93,11 @@ function set_ip_static {
         fi
     fi
 
-    GW=$(ip route | grep default | grep -oP '(?<=via\s)\d+(\.\d+){3}' | head -n 1)
+    # 网关取所选网卡的默认路由，避免多网卡时取到别的接口的网关
+    GW=$(ip route show default dev "$CN" 2>/dev/null | grep -oP '(?<=via\s)\d+(\.\d+){3}' | head -n 1)
+    if [ -z "$GW" ]; then
+        GW=$(ip route | grep default | grep -oP '(?<=via\s)\d+(\.\d+){3}' | head -n 1)
+    fi
 
     # 校验必要信息，避免生成不可用的 Netplan 配置后失联
     if ! [[ "$IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
