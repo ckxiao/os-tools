@@ -1209,7 +1209,10 @@ password_policy_management() {
                     read -p "密码最小有效期(天\默认:7): " min_days
                     read -p "密码过期前警告(天\默认:15): " warn_age
 
-                    _change_password_complexity_passmaxday $max_days $min_days $warn_age || {red_echo "失败,请检查输入或权限." && return 1}
+                    _change_password_complexity_passmaxday "$max_days" "$min_days" "$warn_age" || {
+                        red_echo "失败,请检查输入或权限."
+                        return 1
+                    }
                     green_echo "密码有效期设置已更新"
                 fi
                 blue_echo "--------------------------------------------------------------------------"
@@ -1222,8 +1225,11 @@ password_policy_management() {
                 read -p "是否要修改密码历史设置? (y/N): " confirm
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
                     read -p "要记住的历史密码数量(0-取消): " remember
-                    [$remember = "0"] && reture 0
-                    _change_password_complexity_remember "$remember" || {red_echo "修改失败,请检查输入或权限." && return 1}
+                    [ "$remember" = "0" ] && return 0
+                    _change_password_complexity_remember "$remember" || {
+                        red_echo "修改失败,请检查输入或权限."
+                        return 1
+                    }
                     green_echo "密码历史设置已更新"
                 else
                     green_echo "已经取消!!!"

@@ -361,7 +361,7 @@ configure_user_audit() {
         if [[ "${terminal}" == "/bin/bash" || "${terminal}" == "/bin/sh" ]]; then
             echo "    ${i} 用户, shell终端为 /bin/bash 或者 /bin/sh"
         fi
-        for j in ${defaultuser[@]}; do
+        for j in "${defaultuser[@]}"; do
             if [[ "${name}" == "${j}" ]]; then
                 flag=1
                 break
