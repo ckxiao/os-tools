@@ -1,0 +1,41 @@
+name: Validate shell tools
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          for file in menu.sh scripts/**/*.sh; do
+            bash -n "$file"
+          done
+
+      - name: Check catalog references
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r profile_id _family _version os_path _title \
+            script_id file _script_title _description _risk _root _mode; do
+            [[ -z "${profile_id//[[:space:]]/}" || "$profile_id" == \#* ]] && continue
+            [[ -f "scripts/$os_path/$file" ]] || {
+              echo "catalog.tsv references missing file: scripts/$os_path/$file"
+              exit 1
+            }
+          done < catalog.tsv
+
+      - name: Verify checksums
+        shell: bash
+        run: sha256sum --check --strict SHA256SUMS
