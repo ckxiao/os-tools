@@ -4,6 +4,12 @@ script_name=$(basename "$0" .sh)      # 示例：原脚本名称为 deploy.sh �
 current_time=$(date "+%Y%m%d-%H%M%S") # 获取当前时间戳用于备份文件
 LOG_FILE="log_${script_name}_${current_time}.log"
 
+# 无人值守：关闭 debconf 提问与 needrestart 的服务重启交互
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+export APT_LISTCHANGES_FRONTEND=none
+export NEEDRESTART_MODE=a
+
 ###############################
 #        配置参数区域         #
 ###############################

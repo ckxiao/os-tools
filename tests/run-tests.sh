@@ -295,6 +295,43 @@ test_signature_check_disabled_by_default() {
     assert_status 0 "$rc"
 }
 
+test_apt_get_sets_noninteractive_env() {
+    local shim out
+    shim="$(mktemp -d)"
+    cat >"$shim/sudo" <<'SHIM'
+#!/usr/bin/env bash
+exec "$@"
+SHIM
+    cat >"$shim/apt-get" <<'SHIM'
+#!/usr/bin/env bash
+printf 'FE=%s ARGS=%s\n' "$DEBIAN_FRONTEND" "$*"
+SHIM
+    chmod +x "$shim/sudo" "$shim/apt-get"
+
+    out="$(PATH="$shim:$PATH" bash -c '. "$1"; apt_get install -y foo' test "$COMMON" 2>&1)"
+    rm -rf "$shim"
+
+    assert_contains "$out" "FE=noninteractive" &&
+        assert_contains "$out" "install -y foo" &&
+        assert_contains "$out" "--force-confold"
+}
+
+test_modules_use_apt_get_wrapper() {
+    local f hits="" h
+    for f in "$ROOT"/scripts/ubuntu/24.04/{mgt-god,users,network,service,container,k8s}.sh; do
+        [ -f "$f" ] || continue
+        h="$(grep -nE '(^|[^_[:alnum:]])apt(-get)? (install|update|upgrade|purge)' "$f" |
+            grep -v 'apt_get' | grep -vE '^[0-9]+:[[:space:]]*#' || true)"
+        [ -n "$h" ] && hits+="$f: $h"$'\n'
+    done
+    if [ -n "$hits" ]; then
+        echo "    发现未走 apt_get 的裸调用："
+        printf '%s' "$hits"
+        return 1
+    fi
+    return 0
+}
+
 # ---------------------------------------------------------------- 运行
 
 main() {

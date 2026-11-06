@@ -405,7 +405,7 @@ _monitor_with_iftop() {
                 return 1
             }
         else
-            sudo apt-get install -y iftop || {
+            apt_get install -y iftop || {
                 red_echo "iftop安装失败"
                 return 1
             }
@@ -445,7 +445,7 @@ _monitor_with_nload() {
                 return 1
             }
         else
-            sudo apt-get install -y nload || {
+            apt_get install -y nload || {
                 red_echo "nload安装失败"
                 return 1
             }
@@ -838,7 +838,7 @@ _traceroute_test() {
 
     if ! command -v traceroute &>/dev/null; then
         blue_echo "正在安装traceroute..."
-        sudo apt install traceroute || red_echo "traceroute 安装失败!!!"
+        apt_get install traceroute || red_echo "traceroute 安装失败!!!"
     fi
     green_echo "正在执行Traceroute跟踪: ${target}..."
     traceroute "$target"

@@ -684,7 +684,7 @@ _test_random_iops() {
         red_echo "错误:fio工具未安装"
         read -p "是否要安装fio? [y/N] " install_choice
         if [[ "$install_choice" =~ [yY] ]]; then
-            sudo apt install -y fio || {
+            apt_get install -y fio || {
                 red_echo "fio安装失败"
                 return 1
             }
@@ -793,7 +793,7 @@ _smart_check() {
 
     if ! command -v smartctl &>/dev/null; then
         red_echo "错误:smartctl工具未安装, 请先安装smartmontools"
-        sudo apt install -y smartmontools
+        apt_get install -y smartmontools
     fi
 
     blue_echo "获取 $device 的SMART健康状态..."
@@ -1275,8 +1275,8 @@ _temp_monitor() {
     if command -v sensors &>/dev/null; then
         sensors
     else
-        yellow_echo "正在安装lm-sensors包: sudo apt install lm-sensors"
-        sudo apt install -y lm-sensors
+        yellow_echo "正在安装 lm-sensors 软件包"
+        apt_get install -y lm-sensors
         sudo sensors-detect --auto
     fi
 }
@@ -1327,7 +1327,7 @@ _os_unified_monitor() {
             sensors | grep -E "Core|Package"
         else
             yellow_echo "警告: sensors命令不可用"
-            sudo apt install -y lm-sensors
+            apt_get install -y lm-sensors
             sudo sensors-detect --auto
         fi
         echo
@@ -1722,7 +1722,7 @@ clean_package_cache() {
 _check_updates() {
     blue_echo "---------------检查可用更新---------------"
     if command -v apt-get &>/dev/null; then
-        apt update && apt list --upgradable
+        apt_get update && apt_get list --upgradable
     elif command -v yum &>/dev/null; then
         yum check-update
     elif command -v dnf &>/dev/null; then
@@ -1739,7 +1739,7 @@ _check_updates() {
 _security_updates() {
     blue_echo "---------------安全更新筛选---------------"
     if command -v apt-get &>/dev/null; then
-        apt list --upgradable | grep -i security
+        apt_get list --upgradable | grep -i security
     elif command -v yum &>/dev/null; then
         yum updateinfo list security
     else
@@ -1752,7 +1752,7 @@ _perform_update() {
     blue_echo "---------------执行更新---------------"
     if [ -z "$packages" ]; then
         if command -v apt-get &>/dev/null; then
-            apt upgrade -y
+            apt_get upgrade -y
         elif command -v yum &>/dev/null; then
             yum update -y
         elif command -v dnf &>/dev/null; then
@@ -1762,7 +1762,7 @@ _perform_update() {
         fi
     else
         if command -v apt-get &>/dev/null; then
-            apt install -y $packages
+            apt_get install -y $packages
         elif command -v yum &>/dev/null; then
             yum update -y $packages
         elif command -v dnf &>/dev/null; then
@@ -1824,7 +1824,7 @@ EOF
         check_command "添加 ${repo_name} 仓库"
 
         # Update package lists
-        sudo apt-get update
+        apt_get update
         check_command "更新软件包列表"
 
     elif command -v yum &>/dev/null; then
@@ -1849,7 +1849,7 @@ _remove_repo() {
     blue_echo "---------------删除软件仓库---------------"
     if command -v apt-get &>/dev/null; then
         rm -f "/etc/apt/sources.list.d/${repo_name}.list"
-        apt update
+        apt_get update
     elif command -v yum &>/dev/null; then
         yum-config-manager --disable $repo_name
         rm -f "/etc/yum.repos.d/${repo_name}.repo"
@@ -1998,7 +1998,7 @@ _install_pkg() {
     local pkg=$1
     blue_echo "正在安装软件包: $pkg..."
     if command -v apt >/dev/null 2>&1; then
-        sudo apt install -y "$pkg"
+        apt_get install -y "$pkg"
     elif command -v yum >/dev/null 2>&1; then
         sudo yum install -y "$pkg"
     elif command -v dnf >/dev/null 2>&1; then
@@ -2017,7 +2017,7 @@ _remove_pkg() {
     [ "$confirm" != "y" ] && return
 
     if command -v apt >/dev/null 2>&1; then
-        sudo apt purge -y "$pkg"
+        apt_get purge -y "$pkg"
     elif command -v yum >/dev/null 2>&1; then
         sudo yum remove -y "$pkg"
     elif command -v dnf >/dev/null 2>&1; then
@@ -2036,7 +2036,7 @@ _search_pkg() {
 
     blue_echo "正在搜索软件包: $pkg..."
     if command -v apt >/dev/null 2>&1; then
-        search_cmd="sudo apt search ^$pkg"
+        search_cmd="apt_get search ^$pkg"
     elif command -v sudo yum >/dev/null 2>&1; then
         search_cmd="sudo yum search $pkg"
     elif command -v sudo dnf >/dev/null 2>&1; then
@@ -2843,7 +2843,7 @@ upload_key() {
 
     # 安装sshpass(如果需要)
     if ! command -v sshpass &>/dev/null; then
-        sudo apt-get install -y sshpass || {
+        apt_get install -y sshpass || {
             echo "Error: Failed to install sshpass"
             return 1
         }

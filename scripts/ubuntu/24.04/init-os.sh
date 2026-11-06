@@ -191,6 +191,38 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 #endregion
 
+#region 无人值守设置
+# 初始化过程不允许停在 TUI 对话框上：关闭 debconf 提问、apt 变更列表分页，
+# 以及 Ubuntu 24.04 上 needrestart 的"是否重启服务"交互
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+export APT_LISTCHANGES_FRONTEND=none
+export NEEDRESTART_MODE=a
+
+# 预置键盘与区域设置，避免 keyboard-configuration/tzdata 升级时弹出选择界面。
+# 取值与脚本后续设定的时区保持一致。
+if command -v debconf-set-selections >/dev/null 2>&1; then
+    debconf-set-selections <<'PRESEED'
+keyboard-configuration keyboard-configuration/layoutcode string us
+keyboard-configuration keyboard-configuration/modelcode string pc105
+keyboard-configuration keyboard-configuration/variantcode string
+console-setup console-setup/charmap47 select UTF-8
+tzdata tzdata/Areas select Asia
+tzdata tzdata/Zones/Asia select Shanghai
+PRESEED
+fi
+
+# 统一 apt-get 调用；本脚本已强制 root，无需 sudo
+apt_get() {
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    APT_LISTCHANGES_FRONTEND=none \
+    NEEDRESTART_MODE=a \
+        apt-get -o Dpkg::Options::=--force-confdef \
+                -o Dpkg::Options::=--force-confold "$@"
+}
+#endregion
+
 #region 更新source.list 及更新系统
 green_echo "替换为阿里云APT源..."
 sudo tee /etc/apt/sources.list.d/ubuntu.sources >/dev/null <<'EOF'
@@ -210,9 +242,9 @@ green_echo "当前生效源列表："
 apt-cache policy | grep -E 'http|https' # 应仅显示aliyun和docker镜像源
 
 green_echo "刷新软件源元数据，从 /etc/apt/sources.list 更新系统包列表，不会修改已安装的软件包..."
-sudo apt-get update
+apt_get update
 green_echo "根据缓存的软件包列表，升级所有可更新的软件包..."
-sudo apt-get upgrade -y
+apt_get upgrade -y
 green_echo "系统更新完成..."
 #endregion
 

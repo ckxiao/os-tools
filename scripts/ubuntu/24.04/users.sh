@@ -1209,7 +1209,7 @@ _change_password_complexity() {
     local maxrepeat=${6:-"3"} #拒绝连续重复字符(如aaa)
     local difok=${7:-"3"}     #拒绝与旧密码相似
 
-    sudo apt install -y cracklib-runtime libpam-pwquality
+    apt_get install -y cracklib-runtime libpam-pwquality
     PAM_COMMON_PASSWORD="/etc/pam.d/common-password" # PAM密码配置文件路径
     CONFIG_FILE="/etc/security/pwquality.conf"       # 密码复杂性规则配置文件
 

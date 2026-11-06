@@ -231,6 +231,28 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops
 
 `common.sh` 不能直接执行（会报错退出），只能被同目录下的脚本 `source`。菜单在下载原子脚本时会一并下载并校验该文件。
 
+## 常见问题
+
+**初始化过程中卡在键盘/时区选择框？**
+
+旧版本没有关闭 debconf 前台，`apt upgrade` 升级 `keyboard-configuration` 或 `tzdata` 时会弹出 TUI 对话框。现在所有脚本统一使用 `apt_get` 包装器：
+
+- 导出 `DEBIAN_FRONTEND=noninteractive`、`DEBCONF_NONINTERACTIVE_SEEN=true`；
+- 传入 `--force-confdef --force-confold`，配置文件冲突时保留现有版本；
+- 设置 `NEEDRESTART_MODE=a`，避免 Ubuntu 24.04 的 needrestart 询问"是否重启服务"；
+- `init-os.sh` 额外通过 `debconf-set-selections` 预置键盘（us/pc105）与时区（Asia/Shanghai）。
+
+如果上一次因弹框被强行中断，系统可能留下半配置的包，先执行：
+
+```bash
+sudo dpkg --configure -a
+sudo apt-get -f install
+```
+
+**升级时出现 `Which services should be restarted?`？**
+
+需要 `needrestart` 的交互确认，现已通过 `NEEDRESTART_MODE=a` 关闭。
+
 ## 安全提示
 
 - 公开仓库中的脚本会修改服务器、网络、SSH、Docker 或 Kubernetes。执行前应审查具体脚本及风险说明。

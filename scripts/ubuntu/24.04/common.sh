@@ -53,6 +53,36 @@ init_logging() {
     echo "日志文件: $log_file"
 }
 
+# ---------------------------------------------------------------- 无人值守
+
+# 这些脚本面向无人值守执行：关闭 debconf 对话框、apt 的变更列表分页
+# 以及 Ubuntu 24.04 上 needrestart 的"是否重启服务"交互
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+export APT_LISTCHANGES_FRONTEND=none
+export NEEDRESTART_MODE=a
+
+# 统一 apt-get 调用：确保非交互设置在 sudo 之后依然生效。
+# 非 root 时使用 sudo env 透传变量，root 时直接用 env。
+apt_get() {
+    local -a runner=(env)
+    if [ "$(id -u)" -ne 0 ]; then
+        if ! has_command sudo; then
+            red_echo "缺少 sudo，且当前不是 root，无法执行 apt-get"
+            return 1
+        fi
+        runner=(sudo env)
+    fi
+
+    "${runner[@]}" \
+        DEBIAN_FRONTEND=noninteractive \
+        DEBCONF_NONINTERACTIVE_SEEN=true \
+        APT_LISTCHANGES_FRONTEND=none \
+        NEEDRESTART_MODE=a \
+        apt-get -o Dpkg::Options::=--force-confdef \
+        -o Dpkg::Options::=--force-confold "$@"
+}
+
 # ---------------------------------------------------------------- 前置检查
 
 require_root() {
@@ -116,7 +146,7 @@ EOF
     sudo rm -f /etc/apt/sources.list.d/*{security,archive}*.list
 
     green_echo "刷新软件源元数据..."
-    sudo apt-get update || return 1
+    apt_get update || return 1
 }
 
 # ---------------------------------------------------------------- Docker
@@ -187,7 +217,7 @@ EOF
 # 安装 Docker CE，GPG 获取失败时最多重试 10 次
 install_docker() {
     green_echo "安装 Docker 依赖包..."
-    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg \
+    apt_get install -y apt-transport-https ca-certificates curl gnupg \
         software-properties-common || return 1
 
     green_echo "添加 Docker 仓库密钥..."
@@ -210,10 +240,10 @@ install_docker() {
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-aliyun-keyring.gpg] $DOCKER_REPO_BASE $(lsb_release -cs) stable" |
         sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-    sudo apt-get update || return 1
+    apt_get update || return 1
 
     green_echo "安装 Docker 引擎..."
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io || return 1
+    apt_get install -y docker-ce docker-ce-cli containerd.io || return 1
 
     sudo systemctl enable --now docker
     sudo docker --version
