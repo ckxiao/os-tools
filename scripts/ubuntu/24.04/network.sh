@@ -200,7 +200,7 @@ modify_hosts_record() {
 modify_ip_address() {
     if [ $# -gt 0 ]; then
         [ $1 = "dhcp" ] && selected_interface=$2 && _set_dhcp "$selected_interface"
-        [ $1 = "static" ] && selected_interface=$2 && ip=$3 && netmask=$4 && gateway=$5 && dns=$6 && _set_static_ip "$selected_interface" "$ip" "$netmask" "$gateway" "$dns"
+        [ $1 = "static" ] && selected_interface=$2 && ip=$3 && netmask=$4 && gateway=$5 && dns=$6 && _set_ip_static "$selected_interface" "$ip" "$netmask" "$gateway" "$dns"
         [ $1 = "show" ] && _show_network_config
     else
         # 主交互逻辑

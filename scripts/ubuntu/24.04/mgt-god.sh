@@ -29,6 +29,13 @@
 # 脚本所在目录，用于定位同目录的子模块（如 k8s.sh）
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# 共享库可选加载：提供 install_docker / init_logging / run_step 等通用能力。
+# 缺失时各调用点会降级并给出提示，不影响其余模块。
+if [ -r "$SCRIPT_DIR/common.sh" ]; then
+    # shellcheck source=common.sh
+    . "$SCRIPT_DIR/common.sh"
+fi
+
 #region 主菜单
 MAIN_MENU() {
     while true; do
@@ -2638,9 +2645,9 @@ NTP_MGMT() {
                 _ntp_mgmt_service "$action"
                 ;;
             5)
-                read -p "请输入时区(Deafult:"Asia/Shanghai"): " TIMEZONE
-                gree_echo "输入信息:- 时区: ${TIMEZONE:-"Asia/Shanghai"}"
-                _set_timezone ${TIMEZONE:-"Asia/Shanghai"}
+                read -p "请输入时区(默认: Asia/Shanghai): " TIMEZONE
+                green_echo "输入信息:- 时区: ${TIMEZONE:-Asia/Shanghai}"
+                _set_timezone "${TIMEZONE:-Asia/Shanghai}"
                 _ntp_mgmt_sync
                 ;;
             0)
@@ -3873,6 +3880,24 @@ _check_network() {
         return 1
     fi
 }
+# 按编号取出定时任务行，编号口径与 _list_cron_jobs 的展示一致（已过滤注释行）
+_get_cron_job_by_num() {
+    local num="${1:-}"
+    local user="${2:-$(whoami)}"
+    local cron_content
+
+    [[ "$num" =~ ^[0-9]+$ ]] || return 1
+
+    if [ "$user" = "root" ]; then
+        cron_content=$(sudo crontab -l 2>/dev/null)
+    else
+        cron_content=$(crontab -l 2>/dev/null)
+    fi
+    [ -z "$cron_content" ] && return 1
+
+    echo "$cron_content" | grep -v "^#" | sed -n "${num}p"
+}
+
 _edit_cron_job() {
     local job="$1"
     local original_job="$job"
@@ -4132,8 +4157,12 @@ pre_script_name=$(basename "$0")
 #pre_script_name=$(basename "$0" .sh) # 示例:原脚本名称为 deploy.sh 会变成 deploy
 pre_current_time=$(date "+%Y%m%d-%H%M%S")
 pre_log_file="log_${pre_current_time}_${pre_script_name}.log"
-# 将标准输出和标准错误重定向到日志文件
-exec > >(tee -a "$pre_log_file") 2>&1
+# 优先使用共享库的统一日志目录，共享库缺失时退回当前目录
+if declare -F init_logging >/dev/null 2>&1; then
+    init_logging "${pre_script_name%.sh}"
+else
+    exec > >(tee -a "$pre_log_file") 2>&1
+fi
 #endregion
 
 #region main

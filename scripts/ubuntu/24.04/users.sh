@@ -460,7 +460,7 @@ toggle_user_lock() {
             if [ "$confirm" = "y" ]; then
                 usermod -U "$username" && green_echo "用户 $username 已成功解锁" || red_echo "用户 $username 解锁操作失败" #当前已锁定,执行解锁
             else
-                yellow_echo_echo "已取消解锁操作"
+                yellow_echo "已取消解锁操作"
             fi
         else
             # 当前未锁定,执行锁定
@@ -468,7 +468,7 @@ toggle_user_lock() {
             if [ "$confirm" = "y" ]; then
                 usermod -L "$username" && green_echo "用户 $username 已成功锁定" || red_echo "用户 $username 锁定操作失败" #当前未锁定,是否要锁定
             else
-                yellow_echo_echo "已取消锁定操作"
+                yellow_echo "已取消锁定操作"
             fi
         fi
     fi
@@ -693,8 +693,8 @@ manage_privileges() {
     #sudo bash mgt-god.sh manage_privileges ck test
     if [ $# -gt 0 ]; then
         username=$1
-        [ $2 = "add" ] && sudo usermod -aG sudo "$username" && gree_echo "权限添加成功($username)"
-        [ $2 = "del" ] && sudo deluser "$username" sudo && gree_echo "权限移除成功($username)"
+        [ $2 = "add" ] && sudo usermod -aG sudo "$username" && green_echo "权限添加成功($username)"
+        [ $2 = "del" ] && sudo deluser "$username" sudo && green_echo "权限移除成功($username)"
         [ $2 = "test" ] && sudo -l -U "$username" | grep -q "(ALL) NOPASSWD: ALL" && green_echo "测试通过($username)"
     else
         # 显示所有用户供选择
@@ -720,7 +720,7 @@ manage_privileges() {
 
             case $choice in
             1) # 查看当前权限
-                gree_echo "用户 $username 的权限信息:"
+                green_echo "用户 $username 的权限信息:"
                 blue_echo "--------------------------------"
                 sudo -l -U "$username" 2>/dev/null || white_echo "无特殊权限"
                 ;;
@@ -771,7 +771,7 @@ ssh_key_management() {
         username=$1
         [ $2 = "cat" ] && cat "/home/$username/.ssh/authorized_keys"
         [ $2 = "add" ] && echo "$3" >>"/home/$username/.ssh/authorized_keys"
-        [ $2 = "gen" ] && sudo -u "$username" ssh-keygen -t "rsa" -b "4096" -C "SSH Login cert" -f "/home/$username/.ssh/id_rsa" && gree_echo "成功" ||
+        [ $2 = "gen" ] && sudo -u "$username" ssh-keygen -t "rsa" -b "4096" -C "SSH Login cert" -f "/home/$username/.ssh/id_rsa" && green_echo "成功" ||
             red_echo "你失败啦!!!"
         [ $2 = "zw" ] && ssh-keygen -lf "/home/$username/.ssh/id_rsa" && green_echo "指纹来自id_rsa文件" ||
             ssh-keygen -lf "/home/$username/.ssh/authorized_keys" && green_echo "指纹来自authorized_keys文件"
@@ -1213,18 +1213,18 @@ _change_password_complexity() {
     PAM_COMMON_PASSWORD="/etc/pam.d/common-password" # PAM密码配置文件路径
     CONFIG_FILE="/etc/security/pwquality.conf"       # 密码复杂性规则配置文件
 
-    sed -i '/^password\s\+.*pam_cracklib\.so/d' "$PAM_COMMON_PASSWORD" || gree_echo "删除旧配置失败(pam_cracklib)" #被pam_cracklib替换掉了不用了.
-    sed -i '/^password\s\+.*pam_pwquality\.so/d' "$PAM_COMMON_PASSWORD" || gree_echo "删除旧配置失败(pam_pwquality)"
+    sed -i '/^password\s\+.*pam_cracklib\.so/d' "$PAM_COMMON_PASSWORD" || green_echo "删除旧配置失败(pam_cracklib)" #被pam_cracklib替换掉了不用了.
+    sed -i '/^password\s\+.*pam_pwquality\.so/d' "$PAM_COMMON_PASSWORD" || green_echo "删除旧配置失败(pam_pwquality)"
     echo "password    requisite           pam_pwquality.so retry=3 minlen=$minlen ucredit=$ucredit lcredit=$lcredit dcredit=$dcredit ocredit=$ocredit difok=$difok enforce_for_root" >>"$PAM_COMMON_PASSWORD" || {
         red_echo "写入失败(pam_pwquality)"
         return 1
     }
-    sed -i '/^minlen/d' "$CONFIG_FILE" && echo "minlen = $minlen" >>"$CONFIG_FILE" && gree_echo "minlen 更新成功" || red_echo "minlen 更新失败"
-    sed -i '/^ucredit/d' "$CONFIG_FILE" && echo "ucredit = $ucredit" >>"$CONFIG_FILE" && gree_echo "ucredit 更新成功" || red_echo "ucredit 更新失败"
-    sed -i '/^dcredit/d' "$CONFIG_FILE" && echo "dcredit = $dcredit" >>"$CONFIG_FILE" && gree_echo "dcredit 更新成功" || red_echo "dcredit 更新失败"
-    sed -i '/^ocredit/d' "$CONFIG_FILE" && echo "ocredit = $ocredit" >>"$CONFIG_FILE" && gree_echo "ocredit 更新成功" || red_echo "ocredit 更新失败"
-    sed -i '/^maxrepeat/d' "$CONFIG_FILE" && echo "maxrepeat = $maxrepeat" >>"$CONFIG_FILE" && gree_echo "maxrepeat 更新成功" || red_echo "maxrepeat 更新失败"
-    sed -i '/^difok/d' "$CONFIG_FILE" && echo "difok = $difok" >>"$CONFIG_FILE" && gree_echo "difok 更新成功" || red_echo "difok 更新失败"
+    sed -i '/^minlen/d' "$CONFIG_FILE" && echo "minlen = $minlen" >>"$CONFIG_FILE" && green_echo "minlen 更新成功" || red_echo "minlen 更新失败"
+    sed -i '/^ucredit/d' "$CONFIG_FILE" && echo "ucredit = $ucredit" >>"$CONFIG_FILE" && green_echo "ucredit 更新成功" || red_echo "ucredit 更新失败"
+    sed -i '/^dcredit/d' "$CONFIG_FILE" && echo "dcredit = $dcredit" >>"$CONFIG_FILE" && green_echo "dcredit 更新成功" || red_echo "dcredit 更新失败"
+    sed -i '/^ocredit/d' "$CONFIG_FILE" && echo "ocredit = $ocredit" >>"$CONFIG_FILE" && green_echo "ocredit 更新成功" || red_echo "ocredit 更新失败"
+    sed -i '/^maxrepeat/d' "$CONFIG_FILE" && echo "maxrepeat = $maxrepeat" >>"$CONFIG_FILE" && green_echo "maxrepeat 更新成功" || red_echo "maxrepeat 更新失败"
+    sed -i '/^difok/d' "$CONFIG_FILE" && echo "difok = $difok" >>"$CONFIG_FILE" && green_echo "difok 更新成功" || red_echo "difok 更新失败"
 
     #/etc/pam.d/common-password这个配置文件中可以只写入这一段 password requisite pam_pwquality.so   后面的规则全部放在/etc/security/pwquality.conf统一配置
     #如果两个文件都配置密码复杂性规则那么/etc/pam.d/common-password的优先级高冲突的配置优先级高的生效

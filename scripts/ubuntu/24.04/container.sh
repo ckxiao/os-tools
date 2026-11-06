@@ -734,7 +734,7 @@ dockerfile_operations() {
 docker_system_monitoring() {
     if [ $# -gt 0 ]; then
         [ $1 = "status" ] && _system_docker_status
-        [ $1 = "stats" ] && _system_resource_stats
+        [ $1 = "stats" ] && _system_docker_resource_stats
         [ $1 = "events" ] && _system_docker_events
         [ $1 = "profile" ] && _system_performance_profile
         [ $1 = "clean" ] && _system_auto_clean
@@ -756,7 +756,7 @@ docker_system_monitoring() {
                 _system_docker_status
                 ;;
             2)
-                _system_resource_stats
+                _system_docker_resource_stats
                 ;;
             3)
                 _system_docker_events

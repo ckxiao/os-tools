@@ -639,9 +639,9 @@ k8s_network_policy_mgmt() {
     if [ $# -gt 0 ]; then
         [ $1 = "list" ] && _k8s_network_policy_list
         [ $1 = "detail" ] && _k8s_network_policy_detail "$2" "$3"
-        [ $1 = "create" ] && _k8s_network_policy_create "$2"
+        [ $1 = "create" ] && _k8s_network_policy_apply "$2"
         [ $1 = "delete" ] && _k8s_network_policy_delete "$2" "$3"
-        [ $1 = "update" ] && _k8s_network_policy_update "$2"
+        [ $1 = "update" ] && _k8s_network_policy_apply "$2"
     else
         # 主交互逻辑
         while true; do
@@ -703,9 +703,9 @@ k8s_svc_mgmt() {
     if [ $# -gt 0 ]; then
         [ $1 = "list" ] && _k8s_network_service_list
         [ $1 = "detail" ] && _k8s_network_service_detail "$2" "$3"
-        [ $1 = "create" ] && _k8s_network_service_create "$2"
+        [ $1 = "create" ] && _k8s_network_service_apply "$2"
         [ $1 = "delete" ] && _k8s_network_service_delete "$2" "$3"
-        [ $1 = "update" ] && _k8s_network_service_update "$2"
+        [ $1 = "update" ] && _k8s_network_service_apply "$2"
     else
         # 主交互逻辑
         while true; do
