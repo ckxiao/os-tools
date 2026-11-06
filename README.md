@@ -152,7 +152,7 @@ sha256sum menu.sh catalog.tsv README.md scripts/*/*/*.sh > SHA256SUMS
 本地验证：
 
 ```bash
-bash tests/run-tests.sh        # 21 个用例，零依赖，Windows/Linux 均可
+bash tests/run-tests.sh        # 全部用例，零依赖，Windows/Linux 均可执行
 ```
 
 GitHub Actions 会依次检查：Shell 语法、被 source 的附属文件是否存在、`catalog.tsv` 字段数与引用、`shellcheck --severity=error`、`tests/run-tests.sh`、`SHA256SUMS` 一致性。

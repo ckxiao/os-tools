@@ -366,6 +366,26 @@ SHIM
     assert_eq "$want" "$out"
 }
 
+test_catalog_dedupes_multiple_profiles() {
+    local tmp catalog out
+    tmp="$(mktemp -d)"
+    catalog="$tmp/catalog.tsv"
+    cat >"$catalog" <<'TSV'
+# profile_id|os_family|os_version|os_path|profile_title|script_id|filename|script_title|description|risk|requires_root|argument_mode
+ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|1|init-os.sh|基础初始化|d|r|yes|prompt
+ubuntu-24.04|Ubuntu|24.04|ubuntu/24.04|Ubuntu 24.04 LTS|2|init_docker.sh|Docker|d|r|yes|none
+debian-12|Debian|12|debian/12|Debian 12|1|init-os.sh|基础初始化|d|r|yes|prompt
+debian-12|Debian|12|debian/12|Debian 12|2|init_docker.sh|Docker|d|r|yes|none
+TSV
+
+    # IFS 含换行时曾导致 PROFILE_IDS 重复累加，这里直接验证去重结果
+    out="$(bash -c '. "$1"; load_catalog_file "$2"; printf "%s\n" "${PROFILE_IDS[@]}"' test "$MENU" "$catalog" 2>&1)"
+    rm -rf "$tmp"
+
+    assert_eq "ubuntu-24.04
+debian-12" "$out"
+}
+
 # ---------------------------------------------------------------- 运行
 
 main() {
