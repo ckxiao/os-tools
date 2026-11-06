@@ -159,9 +159,7 @@ GitHub Actions 会依次检查：Shell 语法、被 source 的附属文件是否
 
 ## 参数中间脚本
 
-原子脚本中只有 `init-os.sh` 需要位置参数，`hardening-os.sh` 使用选项参数；其余脚本无参数，或按自身语法接收参数（`mgt-god.sh` 为 `函数名 [参数...]`）。
-
-为了把「参数知识」放在与脚本相同的 OS 版本目录内，而不是硬编码进 `menu.sh`，每个版本目录提供一个 `run.sh`：
+为了把「参数知识」放在与脚本相同的 OS 版本目录内，而不是硬编码进 `menu.sh`，每个版本目录提供一个 `run.sh`。所有参数都有默认值，不传即采用默认。
 
 ```bash
 bash scripts/ubuntu/24.04/run.sh --list
@@ -169,27 +167,83 @@ bash scripts/ubuntu/24.04/run.sh --describe init-os.sh
 bash scripts/ubuntu/24.04/run.sh --collect init-os.sh node01 192.168.1.20/24 223.5.5.5
 ```
 
-`--collect` 校验参数后按「每行一个」输出，供调用方 `mapfile` 读取。退出码约定：
+### 每个脚本的用法示例
+
+**`init-os.sh`** — 位置参数，默认值取自当前主机
+
+```bash
+# 查看参数说明
+bash scripts/ubuntu/24.04/run.sh --describe init-os.sh
+
+# 全部指定
+bash scripts/ubuntu/24.04/run.sh --collect init-os.sh node01 192.168.1.20/24 223.5.5.5
+
+# 全部用默认值（主机名=当前主机名，地址=当前地址，DNS=网关）
+bash scripts/ubuntu/24.04/run.sh --collect init-os.sh
+```
+
+**`hardening-os.sh`** — 选项参数，默认 22 端口、不限制来源
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --describe hardening-os.sh
+
+# 指定端口与来源白名单
+bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh \
+  --ssh-port=2222 --allow-hosts=10.0.0.5,10.0.0.6 --ops-user=ops
+
+# 全部用默认值
+bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh
+```
+
+**`init_docker.sh` / `init_llm.sh` / `init_dify.sh`** — 无位置参数，配置走环境变量
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --describe init_docker.sh
+bash scripts/ubuntu/24.04/run.sh --collect init_docker.sh
+```
+
+**`mgt-god.sh`** — 参数原样透传（`函数名 [参数...]`）
+
+```bash
+bash scripts/ubuntu/24.04/run.sh --describe mgt-god.sh
+bash scripts/ubuntu/24.04/run.sh --collect mgt-god.sh check_disk_usage
+```
+
+### 输出与退出码
+
+`--collect` 校验参数后按「每行一个」输出，供调用方 `mapfile` 读取：
 
 | 退出码 | 含义 |
 | --- | --- |
 | 0 | 成功 |
 | 2 | 用法错误或脚本不存在 |
-| 3 | 缺少必填参数 |
+| 3 | 缺少必填参数（且默认值也无法解析） |
 | 4 | 参数校验失败 |
+
+`--explain` 输出参数元数据（名称 / 当前值 / 选项名 / 必填性 / 说明），供 `menu.sh` 做交互复核；分隔符用 `0x1f` 而不是 TAB，因为 TAB 属于 IFS 空白字符，连续出现会折叠导致错列。
 
 `menu.sh` 只负责下载、校验、提权与执行；参数声明、交互提示和格式校验全部委托给 `run.sh`。由于输出写入临时文件而不是进程替换，参数采集失败会正常中断，不会以空参数继续执行。
 
-当前 `ubuntu/24.04` 的参数契约：
+### 菜单里的参数复核
 
-| 脚本 | 参数 | 说明 |
-| --- | --- | --- |
-| `init-os.sh` | `hostname`（必填）、`ip_prefix`（可选）、`dns`（可选） | 位置参数。主机名需符合 RFC 1123；`ip_prefix` 形如 `192.168.1.20/24`，留空沿用当前地址；`dns` 留空使用网关 |
-| `hardening-os.sh` | `--ssh-port`、`--allow-hosts`、`--ops-user` | 选项参数。不传 `--allow-hosts` 则不写来源白名单；端口默认 22，运维账号默认 `ck` |
-| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` | 无 | 配置项通过环境变量覆盖，见各脚本 `--help` |
-| `mgt-god.sh` | 原样透传 | `函数名 [参数...]`，无参进入交互菜单 |
+在菜单中选中脚本后不会立即执行，而是先打印该脚本的全部参数及默认值：
 
-`--collect` 同时接受两种入参形式，输出统一为「每行一个 token」：
+```text
+当前参数（共 3 项，均为脚本默认值，可修改）
+   1) hostname           = node01                          目标主机名，默认沿用当前主机名
+   2) ip_prefix          = 192.168.1.20/24                 静态地址及前缀，默认沿用当前地址
+   3) dns                = 223.5.5.5                       DNS 地址，默认使用网关
+   0  确认并执行      直接回车等同
+   d  恢复默认值
+   q  取消
+输入编号修改，0 或回车执行:
+```
+
+输入编号可逐项修改，`d` 恢复默认值，`0` 或回车进入风险确认，确认后才真正执行。非交互场景（`DSH_TOOLS_YES=1`）自动跳过复核；`DSH_TOOLS_REVIEW=0` 可单独关闭复核而保留确认。
+
+### 入参形式
+
+`--collect` 同时接受位置参数与选项参数，输出统一：
 
 ```bash
 # 位置参数（顺序与契约声明一致）
@@ -198,6 +252,15 @@ bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh 2222 10.0.0.5,10.0.0.
 # 选项参数（可任意顺序，未提供的项取默认值）
 bash scripts/ubuntu/24.04/run.sh --collect hardening-os.sh --ssh-port=2222 --ops-user=ops
 ```
+
+当前 `ubuntu/24.04` 的参数契约：
+
+| 脚本 | 参数 | 默认值 |
+| --- | --- | --- |
+| `init-os.sh` | `hostname` / `ip_prefix` / `dns`（位置参数） | 当前主机名 / 当前地址 / 网关 |
+| `hardening-os.sh` | `--ssh-port` / `--allow-hosts` / `--ops-user` | `22` / 空（不限制来源） / `ck` |
+| `init_docker.sh` / `init_llm.sh` / `init_dify.sh` | 无位置参数 | 见各脚本 `--help` 的环境变量 |
+| `mgt-god.sh` | 原样透传 | 无参进入交互菜单 |
 
 新增 OS 版本时，除了放脚本和登记 `catalog.tsv`，还需提供该版本目录下的 `run.sh`；缺失时 `menu.sh` 会降级为「原始参数直接透传」并给出警告。
 

@@ -106,9 +106,22 @@ test_collect_initos_positional() {
         assert_eq "223.5.5.5" "$(sed -n 3p <<<"$OUTPUT")"
 }
 
-test_collect_missing_required() {
-    run_cmd bash "$RUNNER" --collect init-os.sh
-    assert_status 3 "$RC"
+test_collect_fills_defaults() {
+    # 所有参数都有默认值：不给任何入参也应成功，并逐项输出
+    local tmp
+    tmp="$(mktemp -d)"
+    bash "$RUNNER" --collect init-os.sh >"$tmp/out" 2>&1 </dev/null
+    RC=$?
+    OUTPUT="$(cat "$tmp/out")"
+    local lines
+    lines="$(wc -l <"$tmp/out")"
+    rm -rf "$tmp" 2>/dev/null || true
+    assert_status 0 "$RC" || return 1
+    assert_eq "3" "$lines" &&
+        [ -n "$(sed -n 1p <<<"$OUTPUT")" ] || {
+        echo "    hostname 默认值不应为空"
+        return 1
+    }
 }
 
 test_collect_invalid_values() {
@@ -384,6 +397,64 @@ TSV
 
     assert_eq "ubuntu-24.04
 debian-12" "$out"
+}
+
+test_explain_emits_metadata() {
+    run_cmd bash "$RUNNER" --explain hardening-os.sh
+    assert_status 0 "$RC" || return 1
+    assert_contains "$OUTPUT" "ssh-port" &&
+        assert_contains "$OUTPUT" "allow-hosts" || return 1
+    # 每行必须恰好 5 列（4 个 0x1f 分隔符），否则 menu 会错列
+    local bad
+    bad="$(printf '%s\n' "$OUTPUT" | awk -F'\037' 'NF!=5' | wc -l)"
+    assert_eq "0" "$bad"
+}
+
+test_explain_applies_overrides() {
+    run_cmd bash "$RUNNER" --explain init-os.sh node01 10.0.0.5/24 1.1.1.1
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "node01" &&
+        assert_contains "$OUTPUT" "10.0.0.5/24" &&
+        assert_contains "$OUTPUT" "1.1.1.1"
+}
+
+test_review_loop_edits_value() {
+    local tmp
+    tmp="$(mktemp -d)"
+    cat >"$tmp/drive.sh" <<'DRIVE'
+set -uo pipefail
+. "$1"
+trap - EXIT          # 去掉 menu.sh 的清理 trap，避免它影响退出码
+WORK_DIR="$2"
+review_script_args "$3" init-os.sh
+printf 'RESULT:%s\n' "${REVIEW_ARGS[*]}"
+DRIVE
+    OUTPUT="$(printf '1\nnode77\n\n' | bash "$tmp/drive.sh" "$MENU" "$tmp" "$RUNNER" 2>&1)"
+    RC=$?
+    rm -rf "$tmp" 2>/dev/null || true
+    assert_status 0 "$RC" &&
+        assert_contains "$OUTPUT" "当前参数" &&
+        assert_contains "$OUTPUT" "RESULT:node77"
+}
+
+test_review_loop_cancel() {
+    local tmp
+    tmp="$(mktemp -d)"
+    cat >"$tmp/drive.sh" <<'DRIVE'
+set -uo pipefail
+. "$1"
+trap - EXIT
+WORK_DIR="$2"
+if review_script_args "$3" init-os.sh; then
+    echo "RESULT:accepted"
+else
+    echo "RESULT:cancelled"
+fi
+DRIVE
+    OUTPUT="$(printf 'q\n' | bash "$tmp/drive.sh" "$MENU" "$tmp" "$RUNNER" 2>&1)"
+    RC=$?
+    rm -rf "$tmp" 2>/dev/null || true
+    assert_status 0 "$RC" && assert_contains "$OUTPUT" "RESULT:cancelled"
 }
 
 # ---------------------------------------------------------------- 运行

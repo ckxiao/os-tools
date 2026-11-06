@@ -2,9 +2,10 @@
 # Ubuntu 24.04 host initialization.
 
 #region pre settings
-hostname=$1
-ipadress=$2
-dns=$3
+# 参数均有默认值：主机名取当前主机名，IP 留空沿用当前地址，DNS 留空使用网关
+hostname="${1:-$(hostname -s 2>/dev/null || hostname)}"
+ipadress="${2:-}"
+dns="${3:-}"
 
 script_name=$(basename "$0" .sh) # 示例：原脚本名称为 deploy.sh 会变成 deploy
 current_time=$(date "+%Y%m%d-%H%M%S")
@@ -201,6 +202,11 @@ if [ "$(id -u)" -ne 0 ]; then
     red_echo "请使用 root 或 sudo 执行本脚本"
     exit 1
 fi
+
+printf '\n本次将使用以下参数（可直接回车使用默认值）：\n'
+printf '  主机名    : %s\n' "$hostname"
+printf '  静态地址  : %s\n' "${ipadress:-（沿用当前地址）}"
+printf '  DNS       : %s\n\n' "${dns:-（使用网关）}"
 #endregion
 
 #region 无人值守设置

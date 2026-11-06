@@ -101,6 +101,7 @@ $APP_NAME $APP_VERSION
   DSH_TOOLS_BASE_URL  下载站点地址
   DSH_TOOLS_HOME      安装目录，默认：$DEFAULT_INSTALL_DIR
   DSH_TOOLS_YES=1     跳过运行确认（不推荐用于初始化/加固脚本）
+  DSH_TOOLS_REVIEW=0  关闭参数复核，直接进入风险确认
   DSH_TOOLS_ALLOW_HTTP=1
                       允许 HTTP；仅建议用于可信内网
   DSH_BASH           显式指定 Bash 可执行文件（可选）
@@ -789,6 +790,114 @@ collect_script_args() {
     fi
 }
 
+# 是否进入参数复核：交互终端、未跳过确认、且未用 DSH_TOOLS_REVIEW=0 关闭
+review_enabled() {
+    [[ "${DSH_TOOLS_YES:-0}" == "1" ]] && return 1
+    [[ "${DSH_TOOLS_REVIEW:-1}" == "0" ]] && return 1
+    [[ -t 0 && -t 1 ]]
+}
+
+# 解析 run.sh --explain 的 TSV 输出到全局数组
+load_param_meta() {
+    local meta_file="$1"
+    local name value flag req prompt
+    P_NAME=()
+    P_VALUE=()
+    P_FLAG=()
+    P_REQ=()
+    P_PROMPT=()
+    while IFS=$'\x1f' read -r name value flag req prompt; do
+        [[ -n "$name" ]] || continue
+        P_NAME+=("$name")
+        P_VALUE+=("$value")
+        P_FLAG+=("$flag")
+        P_REQ+=("$req")
+        P_PROMPT+=("$prompt")
+    done <"$meta_file"
+}
+
+# 按参数契约重建传给 --collect 的参数列表
+build_args_from_meta() {
+    local i
+    BUILT_ARGS=()
+    for ((i = 0; i < ${#P_NAME[@]}; i++)); do
+        if [[ -n "${P_FLAG[$i]}" ]]; then
+            [[ -n "${P_VALUE[$i]}" ]] && BUILT_ARGS+=("--${P_FLAG[$i]}=${P_VALUE[$i]}")
+        else
+            BUILT_ARGS+=("${P_VALUE[$i]}")
+        fi
+    done
+}
+
+# 参数复核：先展示脚本默认值，可按编号逐项修改，确认后返回最终参数
+review_script_args() {
+    local runner="$1"
+    local script_file="$2"
+    shift 2
+    local -a current=("$@")
+    local meta_file="$WORK_DIR/${script_file}.meta"
+    local runner_bin choice i new_value label shown
+
+    REVIEW_ARGS=()
+    runner_bin="$(bash_binary)" || fail "找不到 Bash，无法执行参数中间脚本"
+
+    while :; do
+        : >"$meta_file"
+        if ! "$runner_bin" "$runner" --explain "$script_file" \
+            ${current[@]+"${current[@]}"} >"$meta_file"; then
+            fail "参数解析失败：$script_file"
+        fi
+        load_param_meta "$meta_file"
+
+        # 无参数契约（或脚本本身无参数）时无需复核
+        if [ "${#P_NAME[@]}" -eq 0 ]; then
+            REVIEW_ARGS=("${current[@]}")
+            return 0
+        fi
+
+        printf '\n%s当前参数（共 %d 项，均为脚本默认值，可修改）%s\n' \
+            "$BLUE" "${#P_NAME[@]}" "$RESET"
+        for ((i = 0; i < ${#P_NAME[@]}; i++)); do
+            label="${P_NAME[$i]}"
+            [[ -n "${P_FLAG[$i]}" ]] && label="--${P_FLAG[$i]}"
+            shown="${P_VALUE[$i]}"
+            [[ -z "$shown" ]] && shown="(空)"
+            printf '  %2d) %-18s = %-32s %s\n' \
+                "$((i + 1))" "$label" "$shown" "${P_PROMPT[$i]}"
+        done
+        printf '  %2s  %-18s   %s\n' "0" "确认并执行" "直接回车等同"
+        printf '  %2s  %-18s   %s\n' "d" "恢复默认值" ""
+        printf '  %2s  %-18s   %s\n' "q" "取消" ""
+
+        read -r -p "输入编号修改，0 或回车执行: " choice || return 1
+        case "$choice" in
+        "" | 0)
+            build_args_from_meta
+            REVIEW_ARGS=("${BUILT_ARGS[@]}")
+            return 0
+            ;;
+        d | D)
+            current=()
+            ;;
+        q | Q)
+            return 1
+            ;;
+        *)
+            if [[ "$choice" =~ ^[0-9]+$ ]] &&
+                [ "$choice" -ge 1 ] && [ "$choice" -le "${#P_NAME[@]}" ]; then
+                i=$((choice - 1))
+                read -r -p "  ${P_NAME[$i]} 新值（回车保留当前值）: " new_value || return 1
+                [ -n "$new_value" ] && P_VALUE[$i]="$new_value"
+                build_args_from_meta
+                current=("${BUILT_ARGS[@]}")
+            else
+                warn "无效选择：$choice"
+            fi
+            ;;
+        esac
+    done
+}
+
 run_tool() {
     local wanted_profile="$1"
     local script_id="$2"
@@ -802,21 +911,35 @@ run_tool() {
 
     script_path="$(ensure_script "$ENTRY_PROFILE" "$ENTRY_OS_PATH" "$ENTRY_FILE")"
     ensure_extras "$ENTRY_OS_PATH" || fail "附属文件准备失败：$ENTRY_OS_PATH"
-    confirm_run "$ENTRY_TITLE" "$ENTRY_RISK" || {
-        info "已取消"
-        return 0
-    }
 
-    # 参数中间层：由该 OS 版本的 run.sh 统一声明、采集并校验参数
+    # 参数中间层：先取脚本默认值/入参，交互时允许逐项复核，最后才确认执行
     if runner_path="$(ensure_runner "$ENTRY_OS_PATH")"; then
         ensure_work_dir
         args_file="$WORK_DIR/${ENTRY_FILE}.args"
-        collect_script_args "$runner_path" "$ENTRY_FILE" "$args_file" "$@"
-        mapfile -t script_args <"$args_file"
+        if review_enabled; then
+            review_script_args "$runner_path" "$ENTRY_FILE" "$@" || {
+                info "已取消"
+                return 0
+            }
+            script_args=(${REVIEW_ARGS[@]+"${REVIEW_ARGS[@]}"})
+            if [ "${#script_args[@]}" -gt 0 ]; then
+                printf '%s\n' "${script_args[@]}" >"$args_file"
+            else
+                : >"$args_file"
+            fi
+        else
+            collect_script_args "$runner_path" "$ENTRY_FILE" "$args_file" "$@"
+            mapfile -t script_args <"$args_file"
+        fi
     else
         warn "未找到参数中间脚本 $RUNNER_FILE，按原始参数直接执行"
         script_args=("$@")
     fi
+
+    confirm_run "$ENTRY_TITLE" "$ENTRY_RISK" || {
+        info "已取消"
+        return 0
+    }
 
     info "运行：$script_path"
     bash_runner="$(bash_binary)" || fail "找不到 Bash，无法运行脚本"

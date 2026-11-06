@@ -119,6 +119,31 @@ validate_hostlist() {
 
 # ---------------------------------------------------------------- 参数契约
 
+# 默认值支持运行时取值，避免把本机信息写死进仓库：
+#   @hostname   当前主机名
+#   @ip_prefix  当前首个全局 IPv4 地址/前缀
+#   @gateway    默认网关
+# 其余按字面量返回
+param_default() {
+    local raw="$1"
+    local out=""
+    case "$raw" in
+    @hostname)
+        out="$({ hostname -s 2>/dev/null || hostname 2>/dev/null; } | head -1)" || true
+        ;;
+    @ip_prefix)
+        out="$(ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1{print $4}')" || true
+        ;;
+    @gateway)
+        out="$(ip route 2>/dev/null | awk '/^default /{print $3; exit}')" || true
+        ;;
+    *)
+        out="$raw"
+        ;;
+    esac
+    printf '%s' "$out"
+}
+
 PARAM_MODE="passthrough"
 PARAM_NAME=()
 PARAM_PROMPT=()
@@ -157,14 +182,14 @@ load_spec() {
     init-os.sh)
         PARAM_MODE="params"
         add_param hostname \
-            "目标主机名，例如 node01" \
-            required "" validate_hostname
+            "目标主机名，默认沿用当前主机名" \
+            required "@hostname" validate_hostname
         add_param ip_prefix \
-            "静态地址及前缀，例如 192.168.1.20/24（留空沿用当前地址）" \
-            optional "" validate_ipv4_prefix
+            "静态地址及前缀，默认沿用当前地址，例如 192.168.1.20/24" \
+            optional "@ip_prefix" validate_ipv4_prefix
         add_param dns \
-            "DNS 地址，留空则使用网关（例如 223.5.5.5）" \
-            optional "" validate_dns
+            "DNS 地址，默认使用网关，例如 223.5.5.5" \
+            optional "@gateway" validate_dns
         ;;
     mgt-god.sh)
         # 无参进入交互菜单；带参时按 `函数名 [参数...]` 直接调用
@@ -314,7 +339,7 @@ collect_params() {
         fi
 
         if [ -z "$value" ]; then
-            value="${PARAM_DEFAULT[$i]}"
+            value="$(param_default "${PARAM_DEFAULT[$i]}")"
         fi
 
         if [ -z "$value" ] && [ -t 0 ]; then
@@ -357,6 +382,59 @@ collect_params() {
     printf '%s\n' "${result[@]}"
 }
 
+# 输出参数元数据（供 menu.sh 交互复核），每行 5 列、以 0x1f 分隔：
+#   名称 / 当前值 / 选项名 / required|optional / 说明
+# 用非空白分隔符是为了保留空字段（TAB 属 IFS 空白类，连续会折叠）。
+# 默认值已解析，且不做交互提示。
+explain_params() {
+    local script="$1"
+    shift
+    local -a provided=("$@")
+    local -a positional=()
+    local i value arg key pos=0
+
+    script_exists "$script" || die "脚本不存在: $script"
+    load_spec "$script"
+
+    if [ "$PARAM_MODE" != "params" ]; then
+        return 0
+    fi
+
+    declare -A named=()
+    for arg in "${provided[@]+"${provided[@]}"}"; do
+        case "$arg" in
+        --*=*)
+            key="${arg%%=*}"
+            named["${key#--}"]="${arg#*=}"
+            ;;
+        *)
+            positional+=("$arg")
+            ;;
+        esac
+    done
+
+    for i in "${!PARAM_NAME[@]}"; do
+        value=""
+        if [ -n "${PARAM_FLAG[$i]}" ] && [ -n "${named[${PARAM_FLAG[$i]}]:-}" ]; then
+            value="${named[${PARAM_FLAG[$i]}]}"
+        else
+            value="${positional[$pos]:-}"
+            pos=$((pos + 1))
+        fi
+
+        [ -z "$value" ] && value="$(param_default "${PARAM_DEFAULT[$i]}")"
+
+        if [ -n "$value" ] && ! "${PARAM_VALIDATOR[$i]}" "$value"; then
+            err "参数 ${PARAM_NAME[$i]} 不合法: $value"
+            exit "$EXIT_INVALID"
+        fi
+
+        printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+            "${PARAM_NAME[$i]}" "$value" "${PARAM_FLAG[$i]}" \
+            "${PARAM_REQUIRED[$i]}" "${PARAM_PROMPT[$i]}"
+    done
+}
+
 usage() {
     cat <<EOF
 Ubuntu 24.04 参数中间脚本
@@ -365,11 +443,14 @@ Ubuntu 24.04 参数中间脚本
   bash run.sh --list
   bash run.sh --describe <脚本名>
   bash run.sh --collect <脚本名> [参数...]
+  bash run.sh --explain <脚本名> [参数...]
 
 说明：
   本脚本只负责参数声明、采集与校验，不执行原子脚本。
   menu.sh 会先调用 --collect 取得参数，再以 sudo 执行目标脚本。
   位置参数按声明顺序逐行输出；登记了选项名的参数以 --选项名=值 的形式输出，空值不输出。
+  --explain 输出参数元数据（名称/值/选项名/必填性/说明，TAB 分隔），供 menu.sh 做交互复核。
+  每个参数都有默认值，留空即采用默认值；默认值在运行时解析，不写死主机信息。
 
 退出码：0 成功 / 2 用法错误 / 3 缺少必填参数 / 4 参数校验失败
 EOF
@@ -392,6 +473,12 @@ main() {
         shift 2
         script_exists "$target" || die "脚本不存在: $target"
         collect_params "$target" "$@"
+        ;;
+    --explain)
+        [ $# -ge 2 ] || die "--explain 需要脚本名"
+        local explained="$2"
+        shift 2
+        explain_params "$explained" "$@"
         ;;
     -h | --help | help)
         usage
